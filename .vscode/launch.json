@@ -4,7 +4,7 @@
       "name": "Stage 0 (std)",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/stage0/target/debug/pluto",
+      "program": "${workspaceFolder}/stage0/target/debug/nitro",
       "args": [
         "${workspaceFolder}/std"
       ],
