@@ -1,0 +1,19 @@
+{
+  "configurations": [
+    {
+      "name": "Stage 0 (std)",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/stage0/target/debug/pluto",
+      "args": [
+        "${workspaceFolder}/std"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "RUST_BACKTRACE": "1"
+      },
+      "preLaunchTask": "stage0"
+    }
+  ],
+  "version": "2.0.0"
+}

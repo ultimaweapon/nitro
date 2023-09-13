@@ -1,0 +1,14 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "stage0",
+      "type": "cargo",
+      "command": "build",
+      "group": "build",
+      "options": {
+        "cwd": "${workspaceFolder}/stage0"
+      }
+    }
+  ]
+}

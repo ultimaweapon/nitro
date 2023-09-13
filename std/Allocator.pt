@@ -1,0 +1,52 @@
+@pub
+class Allocator;
+
+impl Allocator {
+    @pub
+    fn Alloc(size: usize, align: usize): *u8 {
+        @cfg(unix)
+        let ptr = aligned_alloc(align, size);
+
+        @cfg(windows)
+        let ptr = _aligned_malloc(size, align);
+
+        if ptr == null {
+            @cfg(os != "windows")
+            abort();
+
+            @cfg(os == "windows")
+            asm("int 0x29", in("ecx") 7, out(!) _);
+        }
+
+        ptr
+    }
+
+    @pub
+    fn Free(ptr: *u8) {
+        @cfg(unix)
+        free(ptr);
+
+        @cfg(windows)
+        _aligned_free(ptr);
+    }
+
+    @cfg(unix)
+    @ext(C)
+    fn aligned_alloc(align: usize, size: usize): *u8;
+
+    @cfg(unix)
+    @ext(C)
+    fn free(ptr: *u8);
+
+    @cfg(windows)
+    @ext(C)
+    fn _aligned_malloc(size: usize, align: usize): *u8;
+
+    @cfg(windows)
+    @ext(C)
+    fn _aligned_free(ptr: *u8);
+
+    @cfg(unix)
+    @ext(C)
+    fn abort(): !;
+}
