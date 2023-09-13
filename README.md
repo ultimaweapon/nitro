@@ -113,12 +113,24 @@ git clone --recurse-submodules https://github.com/ultimaweapon/nitro.git
 
 ### Build dependencies
 
-#### Linux and macOS
-
 Run the following command in the root of this repository:
+
+#### Linux and macOS
 
 ```sh
 CMAKE_BUILD_PARALLEL_LEVEL=2 ./build-deps.sh
+```
+
+#### Windows
+
+```powershell
+.\build-deps.ps1
+```
+
+### Build CLI
+
+```sh
+cargo install --path stage0 --root dist
 ```
 
 ## License

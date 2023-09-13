@@ -1,0 +1,58 @@
+name: CI
+on:
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
+jobs:
+  build:
+    name: Build
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+        - os: ubuntu-latest
+          parallel: 2
+          build-deps: ./build-deps.sh
+          artifact: nitro-linux-x86_64
+        - os: macos-latest
+          parallel: 3
+          build-deps: ./build-deps.sh
+          artifact: nitro-mac-x86_64
+        - os: windows-latest
+          parallel: 2
+          build-deps: .\build-deps.ps1
+          artifact: nitro-win-x86_64
+    runs-on: ${{ matrix.os }}
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: ${{ matrix.parallel }}
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - name: Restore LLVM
+      uses: actions/cache/restore@v3
+      with:
+        path: deps/llvm/build
+        key: ${{ runner.os }}-llvm
+    - name: Build dependencies
+      run: ${{ matrix.build-deps }}
+    - name: Build CLI
+      run: cargo install --path stage0 --root dist
+    - name: Cache LLVM
+      uses: actions/cache/save@v3
+      with:
+        path: deps/llvm/build
+        key: ${{ runner.os }}-llvm-${{ github.run_id }}
+      if: startsWith(github.ref, 'refs/heads/')
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.artifact }}
+        path: |
+          dist
+          !dist/.crates.toml
+          !dist/.crates2.json
