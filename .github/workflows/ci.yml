@@ -30,7 +30,7 @@ jobs:
             curl -Lo llvm.tar.xz "$LLVM_URL"
             hash=$(md5 < llvm.tar.xz)
             mkdir -p deps/llvm
-            tar -xJ --strip-components=1 -C -p deps/llvm -f llvm.tar.xz
+            tar -xJ --strip-components=1 -C deps/llvm -f llvm.tar.xz
             rm llvm.tar.xz
             echo "key=mac-llvm-$hash" >> $GITHUB_OUTPUT
           deps: ./build-deps.sh
