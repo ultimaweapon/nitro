@@ -22,7 +22,7 @@ jobs:
             mkdir llvm
             tar -xJ --strip-components=1 -C llvm -f llvm.tar.xz
             rm llvm.tar.xz
-            echo "key=${{ runner.os }}-llvm-$hash" >> $GITHUB_OUTPUT
+            echo "key=linux-llvm-$hash" >> $GITHUB_OUTPUT
         - os: macos-latest
           parallel: 3
           artifact: deps-mac-x86_64
@@ -32,7 +32,7 @@ jobs:
             mkdir llvm
             tar -xJ --strip-components=1 -C llvm -f llvm.tar.xz
             rm llvm.tar.xz
-            echo "key=${{ runner.os }}-llvm-$hash" >> $GITHUB_OUTPUT
+            echo "key=mac-llvm-$hash" >> $GITHUB_OUTPUT
         - os: windows-latest
           parallel: 2
           artifact: deps-win-x86_64
@@ -43,7 +43,7 @@ jobs:
             New-Item .\llvm -ItemType Directory
             tar -x --strip-components=1 -C llvm -f llvm.tar
             Remove-Item llvm.tar.xz, llvm.tar
-            echo "key=${{ runner.os }}-llvm-$hash" >> $env:GITHUB_OUTPUT
+            echo "key=win-llvm-$hash" >> $env:GITHUB_OUTPUT
     runs-on: ${{ matrix.os }}
     env:
       LLVM_URL: https://github.com/llvm/llvm-project/releases/download/llvmorg-16.0.6/llvm-project-16.0.6.src.tar.xz
