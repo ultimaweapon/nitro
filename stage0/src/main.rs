@@ -1,6 +1,5 @@
 use crate::ast::ParseError;
-use crate::project::Project;
-use std::collections::VecDeque;
+use crate::project::{Project, ProjectLoadError};
 use std::error::Error;
 use std::fmt::Write;
 use std::path::PathBuf;
@@ -27,7 +26,7 @@ fn main() -> ExitCode {
         }
     };
 
-    // Get path to the project to compile.
+    // Get path to the target project.
     let project = match args.next() {
         Some(v) => PathBuf::from(v),
         None => {
@@ -36,73 +35,29 @@ fn main() -> ExitCode {
         }
     };
 
-    // Load the project.
-    let mut project = match Project::new(&project) {
+    // Open the project.
+    let mut project = match Project::open(&project) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("Cannot load {}: {}.", project.display(), chain_nested(&e));
+            eprintln!("Cannot open {}: {}.", project.display(), chain_nested(&e));
             return ExitCode::FAILURE;
         }
     };
 
-    // Enumerate all project files.
-    let mut jobs: VecDeque<PathBuf> = VecDeque::from([project.path().to_owned()]);
-
-    while let Some(path) = jobs.pop_front() {
-        // Enumerate files.
-        let items = match std::fs::read_dir(&path) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("Cannot enumerate files in {}: {}", path.display(), e);
-                return ExitCode::FAILURE;
+    // Load the project.
+    if let Err(e) = project.load() {
+        match e {
+            ProjectLoadError::ParseSourceFailed(p, ParseError::ParseFailed(e)) => {
+                eprintln!("{}: {}", p.display(), e);
             }
-        };
-
-        for item in items {
-            let item = match item {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("Cannot read the file in {}: {}", path.display(), e);
-                    return ExitCode::FAILURE;
-                }
-            };
-
-            // Get metadata.
-            let path = item.path();
-            let meta = match std::fs::metadata(&path) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("Cannot get metadata of {}: {}", path.display(), e);
-                    return ExitCode::FAILURE;
-                }
-            };
-
-            // Check if directory.
-            if meta.is_dir() {
-                jobs.push_back(path);
-                continue;
-            }
-
-            // Skip if not a Nitro source.
-            match path.extension() {
-                Some(v) => {
-                    if v != "nt" {
-                        continue;
-                    }
-                }
-                None => continue,
-            }
-
-            // Parse the source.
-            if let Err(e) = project.parse_source(&path) {
-                match e {
-                    ParseError::ReadFailed(e) => eprintln!("{}: {}", path.display(), e),
-                    ParseError::ParseFailed(e) => eprintln!("{}: {}", path.display(), e),
-                }
-
-                return ExitCode::FAILURE;
-            }
+            e => eprintln!(
+                "Cannot load {}: {}.",
+                project.path().display(),
+                chain_nested(&e)
+            ),
         }
+
+        return ExitCode::FAILURE;
     }
 
     ExitCode::SUCCESS
