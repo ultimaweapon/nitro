@@ -42,7 +42,7 @@ jobs:
             unxz llvm.tar.xz
             New-Item .\llvm -ItemType Directory
             tar -x --strip-components=1 -C llvm -f llvm.tar
-            Remove-Item llvm.tar.xz, llvm.tar
+            Remove-Item llvm.tar
             echo "key=win-llvm-$hash" >> $env:GITHUB_OUTPUT
     runs-on: ${{ matrix.os }}
     env:
