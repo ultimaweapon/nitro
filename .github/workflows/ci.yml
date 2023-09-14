@@ -18,7 +18,6 @@ jobs:
           llvm: |
             curl -Lo llvm.tar.xz "$LLVM_URL"
             hash=$(md5sum llvm.tar.xz | head -c 32)
-            mkdir -p deps/llvm
             tar -xJ --strip-components=1 -C deps/llvm -f llvm.tar.xz
             rm llvm.tar.xz
             echo "key=linux-llvm-$hash" >> $GITHUB_OUTPUT
@@ -29,7 +28,6 @@ jobs:
           llvm: |
             curl -Lo llvm.tar.xz "$LLVM_URL"
             hash=$(md5 < llvm.tar.xz)
-            mkdir -p deps/llvm
             tar -xJ --strip-components=1 -C deps/llvm -f llvm.tar.xz
             rm llvm.tar.xz
             echo "key=mac-llvm-$hash" >> $GITHUB_OUTPUT
@@ -41,7 +39,6 @@ jobs:
             Invoke-WebRequest -Uri "$env:LLVM_URL" -OutFile llvm.tar.xz
             $hash = (Get-FileHash llvm.tar.xz).Hash
             unxz llvm.tar.xz
-            New-Item .\deps\llvm -ItemType Directory
             tar -x --strip-components=1 -C deps/llvm -f llvm.tar
             Remove-Item llvm.tar
             echo "key=win-llvm-$hash" >> $env:GITHUB_OUTPUT
