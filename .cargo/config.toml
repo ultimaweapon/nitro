@@ -1,0 +1,2 @@
+[env]
+LLVM_SYS_160_PREFIX = { value = "lib/llvm", relative = true }

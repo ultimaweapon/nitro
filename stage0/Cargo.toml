@@ -4,4 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+llvm-sys = { version = "160", features = ["strict-versioning"] }
 thiserror = "1.0"
+toml = "0.8"

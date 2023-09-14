@@ -1,6 +1,8 @@
 use crate::ast::ParseError;
 use crate::project::Project;
 use std::collections::VecDeque;
+use std::error::Error;
+use std::fmt::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -34,8 +36,16 @@ fn main() -> ExitCode {
         }
     };
 
+    // Load the project.
+    let mut project = match Project::new(&project) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Cannot load {}: {}.", project.display(), chain_nested(&e));
+            return ExitCode::FAILURE;
+        }
+    };
+
     // Enumerate all project files.
-    let mut project = Project::new(project);
     let mut jobs: VecDeque<PathBuf> = VecDeque::from([project.path().to_owned()]);
 
     while let Some(path) = jobs.pop_front() {
@@ -96,4 +106,15 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+fn chain_nested(mut e: &dyn Error) -> String {
+    let mut m = e.to_string();
+
+    while let Some(v) = e.source() {
+        write!(m, " -> {v}").unwrap();
+        e = v;
+    }
+
+    m
 }
