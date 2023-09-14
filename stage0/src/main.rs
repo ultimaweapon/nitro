@@ -73,10 +73,10 @@ fn main() -> ExitCode {
                 continue;
             }
 
-            // Skip if not a Pluto source.
+            // Skip if not a Nitro source.
             match path.extension() {
                 Some(v) => {
-                    if v != "pt" {
+                    if v != "nt" {
                         continue;
                     }
                 }
