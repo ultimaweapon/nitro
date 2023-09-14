@@ -17,7 +17,7 @@ jobs:
           parallel: 2
           artifact: deps-linux-x86_64
           llvm: |
-            curl -o llvm.tar.xz "$LLVM_URL"
+            curl -Lo llvm.tar.xz "$LLVM_URL"
             hash=$(md5sum llvm.tar.xz | head -c 32)
             mkdir llvm
             tar -xJ --strip-components=1 -C llvm -f llvm.tar.xz
@@ -27,7 +27,7 @@ jobs:
           parallel: 3
           artifact: deps-mac-x86_64
           llvm: |
-            curl -o llvm.tar.xz "$LLVM_URL"
+            curl -Lo llvm.tar.xz "$LLVM_URL"
             hash=$(md5sum llvm.tar.xz | head -c 32)
             mkdir llvm
             tar -xJ --strip-components=1 -C llvm -f llvm.tar.xz
