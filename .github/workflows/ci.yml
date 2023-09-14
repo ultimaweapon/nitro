@@ -7,105 +7,71 @@ on:
     branches:
     - main
 jobs:
-  deps:
-    name: Build dependencies
+  build:
+    name: Build
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         include:
         - os: ubuntu-latest
           parallel: 2
-          artifact: deps-linux-x86_64
           llvm: |
             curl -Lo llvm.tar.xz "$LLVM_URL"
             hash=$(md5sum llvm.tar.xz | head -c 32)
-            mkdir llvm
-            tar -xJ --strip-components=1 -C llvm -f llvm.tar.xz
+            mkdir -p deps/llvm
+            tar -xJ --strip-components=1 -C deps/llvm -f llvm.tar.xz
             rm llvm.tar.xz
             echo "key=linux-llvm-$hash" >> $GITHUB_OUTPUT
+          deps: ./build-deps.sh
+          artifact: nitro-linux-x86_64
         - os: macos-latest
           parallel: 3
-          artifact: deps-mac-x86_64
           llvm: |
             curl -Lo llvm.tar.xz "$LLVM_URL"
             hash=$(md5 < llvm.tar.xz)
-            mkdir llvm
-            tar -xJ --strip-components=1 -C llvm -f llvm.tar.xz
+            mkdir -p deps/llvm
+            tar -xJ --strip-components=1 -C -p deps/llvm -f llvm.tar.xz
             rm llvm.tar.xz
             echo "key=mac-llvm-$hash" >> $GITHUB_OUTPUT
+          deps: ./build-deps.sh
+          artifact: nitro-mac-x86_64
         - os: windows-latest
           parallel: 2
-          artifact: deps-win-x86_64
           llvm: |
             Invoke-WebRequest -Uri "$env:LLVM_URL" -OutFile llvm.tar.xz
             $hash = (Get-FileHash llvm.tar.xz).Hash
             unxz llvm.tar.xz
-            New-Item .\llvm -ItemType Directory
-            tar -x --strip-components=1 -C llvm -f llvm.tar
+            New-Item .\deps\llvm -ItemType Directory
+            tar -x --strip-components=1 -C deps/llvm -f llvm.tar
             Remove-Item llvm.tar
             echo "key=win-llvm-$hash" >> $env:GITHUB_OUTPUT
+          deps: .\build-deps.ps1
+          artifact: nitro-win-x86_64
     runs-on: ${{ matrix.os }}
     env:
       LLVM_URL: https://github.com/llvm/llvm-project/releases/download/llvmorg-16.0.6/llvm-project-16.0.6.src.tar.xz
       CMAKE_BUILD_PARALLEL_LEVEL: ${{ matrix.parallel }}
     steps:
+    - name: Checkout source
+      uses: actions/checkout@v4
     - name: Download LLVM
       run: ${{ matrix.llvm }}
       id: llvm
-    - name: Restore build files
+    - name: Restore LLVM cache
       uses: actions/cache/restore@v3
       with:
-        path: llvm/build
+        path: deps/llvm/build
         key: ${{ steps.llvm.outputs.key }}
-    - name: Run CMake
-      run: cmake --install-prefix "${{ github.workspace }}/dist/llvm" -B "${{ github.workspace }}/llvm/build" -Wno-dev -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_ZSTD:BOOL=OFF -DLLVM_APPEND_VC_REV:BOOL=OFF llvm/llvm
-    - name: Build
-      run: cmake --build "${{ github.workspace }}/llvm/build" --config Release
-    - name: Cache build files
-      uses: actions/cache/save@v3
-      with:
-        path: llvm/build
-        key: ${{ steps.llvm.outputs.key }}-${{ github.run_id }}
-      if: startsWith(github.ref, 'refs/heads/')
-    - name: Export artifacts
-      run: cmake --install "${{ github.workspace }}/llvm/build" --config Release
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: ${{ matrix.artifact }}
-        path: dist
-  build:
-    name: Build Nitro
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        include:
-        - os: ubuntu-latest
-          deps: deps-linux-x86_64
-          perms: chmod +x lib/llvm/bin/llvm-config
-          artifact: nitro-linux-x86_64
-        - os: macos-latest
-          deps: deps-mac-x86_64
-          perms: chmod +x lib/llvm/bin/llvm-config
-          artifact: nitro-mac-x86_64
-        - os: windows-latest
-          deps: deps-win-x86_64
-          perms: ''
-          artifact: nitro-win-x86_64
-    runs-on: ${{ matrix.os }}
-    needs: deps
-    steps:
-    - name: Checkout source
-      uses: actions/checkout@v4
-    - name: Download dependencies
-      uses: actions/download-artifact@v3
-      with:
-        name: ${{ matrix.deps }}
-        path: lib
-    - name: Fix file permissions
-      run: ${{ matrix.perms }}
+    - name: Build dependencies
+      run: ${{ matrix.deps }}
     - name: Build CLI
       run: cargo install --path stage0 --root dist
+    - name: Cache LLVM
+      uses: actions/cache/save@v3
+      with:
+        path: deps/llvm/build
+        key: ${{ steps.llvm.outputs.key }}-${{ github.run_id }}
+      if: startsWith(github.ref, 'refs/heads/')
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:
