@@ -1,19 +1,24 @@
+pub use self::meta::*;
+
 use crate::ast::{ParseError, SourceFile};
+use crate::pkg::{Arch, Package, PackageMeta};
 use llvm_sys::core::{
     LLVMContextCreate, LLVMContextDispose, LLVMCreateBuilderInContext, LLVMDisposeBuilder,
     LLVMDisposeModule, LLVMModuleCreateWithNameInContext,
 };
 use llvm_sys::prelude::{LLVMBuilderRef, LLVMContextRef, LLVMModuleRef};
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+mod meta;
+
 /// A Nitro project.
 pub struct Project {
     path: PathBuf,
-    name: String,
-    sources: Vec<SourceFile>,
+    meta: ProjectMeta,
+    sources: BTreeMap<String, SourceFile>,
     builder: LLVMBuilderRef,
     module: LLVMModuleRef,
     llvm: LLVMContextRef,
@@ -21,35 +26,30 @@ pub struct Project {
 
 impl Project {
     pub fn open<P: Into<PathBuf>>(path: P) -> Result<Self, ProjectOpenError> {
-        // Load the project.
+        // Read the project.
         let path = path.into();
         let project = path.join(".nitro");
-        let data = std::fs::read_to_string(&project)
-            .map_err(|e| ProjectOpenError::ReadFileFailed(project.clone(), e))?
-            .parse::<toml::Table>()
-            .map_err(|e| ProjectOpenError::ParseTomlFailed(project.clone(), e))?;
+        let data = match std::fs::read_to_string(&project) {
+            Ok(v) => v,
+            Err(e) => return Err(ProjectOpenError::ReadFileFailed(project, e)),
+        };
 
-        // Get project name.
-        let pkg = data
-            .get("package")
-            .and_then(|v| v.as_table())
-            .ok_or_else(|| ProjectOpenError::UndefinedPackage(project.clone()))?;
-        let name = pkg
-            .get("name")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| ProjectOpenError::UndefinedName(project.clone()))?
-            .to_owned();
+        // Load the project.
+        let meta = match toml::from_str::<ProjectMeta>(&data) {
+            Ok(v) => v,
+            Err(e) => return Err(ProjectOpenError::ParseTomlFailed(project, e)),
+        };
 
         // Setup LLVM.
-        let module = CString::new(name.as_str()).unwrap();
+        let module = CString::new(meta.package.name.as_str()).unwrap();
         let llvm = unsafe { LLVMContextCreate() };
         let module = unsafe { LLVMModuleCreateWithNameInContext(module.as_ptr(), llvm) };
         let builder = unsafe { LLVMCreateBuilderInContext(llvm) };
 
         Ok(Self {
             path,
-            name,
-            sources: Vec::new(),
+            meta,
+            sources: BTreeMap::new(),
             builder,
             module,
             llvm,
@@ -103,13 +103,52 @@ impl Project {
         Ok(())
     }
 
+    pub fn build(&mut self) -> Result<Package, ProjectBuildError> {
+        let pkg = &self.meta.package;
+        let meta = PackageMeta::new(pkg.name.clone(), pkg.version.clone());
+        let mut bin = Arch::new();
+        let mut lib = Arch::new();
+
+        for (fqtn, src) in &self.sources {}
+
+        Ok(Package::new(meta, bin, lib))
+    }
+
     fn load_source(&mut self, path: PathBuf) -> Result<(), ProjectLoadError> {
+        // Parse the source.
         let source = match SourceFile::parse(path.as_path()) {
             Ok(v) => v,
             Err(e) => return Err(ProjectLoadError::ParseSourceFailed(path, e)),
         };
 
-        self.sources.push(source);
+        // Get fully qualified type name.
+        if source.ty().is_some() {
+            let mut fqtn = String::new();
+
+            for c in path.strip_prefix(&self.path).unwrap().components() {
+                let name = match c {
+                    std::path::Component::Normal(v) => match v.to_str() {
+                        Some(v) => v,
+                        None => return Err(ProjectLoadError::NonUtf8Path(path)),
+                    },
+                    _ => unreachable!(),
+                };
+
+                if !fqtn.is_empty() {
+                    fqtn.push('.');
+                }
+
+                fqtn.push_str(name);
+            }
+
+            // Strip extension.
+            fqtn.pop();
+            fqtn.pop();
+            fqtn.pop();
+
+            assert!(self.sources.insert(fqtn, source).is_none());
+        }
+
         Ok(())
     }
 }
@@ -130,12 +169,6 @@ pub enum ProjectOpenError {
 
     #[error("cannot parse {0}")]
     ParseTomlFailed(PathBuf, #[source] toml::de::Error),
-
-    #[error("no table package in the {0}")]
-    UndefinedPackage(PathBuf),
-
-    #[error("no package name has been defined in {0}")]
-    UndefinedName(PathBuf),
 }
 
 /// Represents an error when a [`Project`] is failed to load.
@@ -152,4 +185,11 @@ pub enum ProjectLoadError {
 
     #[error("cannot parse {0}")]
     ParseSourceFailed(PathBuf, #[source] ParseError),
+
+    #[error("path {0} is not UTF-8")]
+    NonUtf8Path(PathBuf),
 }
+
+/// Represents an error when a [`Project`] is failed to build.
+#[derive(Debug, Error)]
+pub enum ProjectBuildError {}

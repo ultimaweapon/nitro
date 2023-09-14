@@ -7,6 +7,7 @@ use std::process::ExitCode;
 
 mod ast;
 mod lexer;
+mod pkg;
 mod project;
 
 fn main() -> ExitCode {
@@ -39,7 +40,7 @@ fn main() -> ExitCode {
     let mut project = match Project::open(&project) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("Cannot open {}: {}.", project.display(), chain_nested(&e));
+            eprintln!("Cannot open {}: {}.", project.display(), join_nested(&e));
             return ExitCode::FAILURE;
         }
     };
@@ -53,17 +54,30 @@ fn main() -> ExitCode {
             e => eprintln!(
                 "Cannot load {}: {}.",
                 project.path().display(),
-                chain_nested(&e)
+                join_nested(&e)
             ),
         }
 
         return ExitCode::FAILURE;
     }
 
+    // Build the project.
+    let pkg = match project.build() {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!(
+                "Cannot build {}: {}.",
+                project.path().display(),
+                join_nested(&e)
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+
     ExitCode::SUCCESS
 }
 
-fn chain_nested(mut e: &dyn Error) -> String {
+fn join_nested(mut e: &dyn Error) -> String {
     let mut m = e.to_string();
 
     while let Some(v) = e.source() {

@@ -53,6 +53,10 @@ impl SourceFile {
         Ok(file)
     }
 
+    pub fn ty(&self) -> Option<&TypeDefinition> {
+        self.ty.as_ref()
+    }
+
     fn parse_top(&mut self, data: String) -> Result<(), SyntaxError> {
         let mut lex = Lexer::new(data);
         let mut attrs = None;
