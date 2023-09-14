@@ -28,7 +28,7 @@ jobs:
           artifact: deps-mac-x86_64
           llvm: |
             curl -Lo llvm.tar.xz "$LLVM_URL"
-            hash=$(md5sum llvm.tar.xz | head -c 32)
+            hash=$(md5 < llvm.tar.xz)
             mkdir llvm
             tar -xJ --strip-components=1 -C llvm -f llvm.tar.xz
             rm llvm.tar.xz
