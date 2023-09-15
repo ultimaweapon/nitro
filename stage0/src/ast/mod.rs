@@ -57,6 +57,10 @@ impl SourceFile {
         self.ty.as_ref()
     }
 
+    pub fn impls(&self) -> &[TypeImpl] {
+        self.impls.as_ref()
+    }
+
     fn parse_top(&mut self, data: String) -> Result<(), SyntaxError> {
         let mut lex = Lexer::new(data);
         let mut attrs = None;
@@ -250,7 +254,7 @@ impl SourceFile {
             }
         }
 
-        Ok(TypeImpl::new(def, ty))
+        Ok(TypeImpl::new(def, ty, functions))
     }
 
     fn parse_fn(
@@ -773,16 +777,16 @@ impl SourceFile {
             Token::ExclamationMark(v) => TypeName::Never(v),
             Token::OpenParenthesis(o) => TypeName::Unit(o, lex.next_cp()?),
             Token::Identifier(mut ident) => {
-                let mut path = Vec::new();
+                let mut fqtn = Vec::new();
 
                 loop {
                     match lex.next()? {
-                        Some(Token::FullStop(_)) => path.push(ident),
+                        Some(Token::FullStop(_)) => fqtn.push(ident),
                         Some(_) => {
                             lex.undo();
-                            break TypeName::Ident(path, ident);
+                            break;
                         }
-                        None => break TypeName::Ident(path, ident),
+                        None => break,
                     }
 
                     ident = match lex.next()? {
@@ -798,6 +802,10 @@ impl SourceFile {
                         }
                     };
                 }
+
+                fqtn.push(ident);
+
+                TypeName::Ident(fqtn)
             }
             t => return Err(SyntaxError::new(t.span().clone(), "invalid type")),
         };

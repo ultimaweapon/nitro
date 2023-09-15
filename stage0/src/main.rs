@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 mod ast;
+mod codegen;
 mod lexer;
 mod pkg;
 mod project;

@@ -1,12 +1,8 @@
 pub use self::meta::*;
 
 use crate::ast::{ParseError, SourceFile};
+use crate::codegen::Codegen;
 use crate::pkg::{Arch, Package, PackageMeta};
-use llvm_sys::core::{
-    LLVMContextCreate, LLVMContextDispose, LLVMCreateBuilderInContext, LLVMDisposeBuilder,
-    LLVMDisposeModule, LLVMModuleCreateWithNameInContext,
-};
-use llvm_sys::prelude::{LLVMBuilderRef, LLVMContextRef, LLVMModuleRef};
 use std::collections::{BTreeMap, VecDeque};
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
@@ -19,9 +15,6 @@ pub struct Project {
     path: PathBuf,
     meta: ProjectMeta,
     sources: BTreeMap<String, SourceFile>,
-    builder: LLVMBuilderRef,
-    module: LLVMModuleRef,
-    llvm: LLVMContextRef,
 }
 
 impl Project {
@@ -40,19 +33,10 @@ impl Project {
             Err(e) => return Err(ProjectOpenError::ParseTomlFailed(project, e)),
         };
 
-        // Setup LLVM.
-        let module = CString::new(meta.package.name.as_str()).unwrap();
-        let llvm = unsafe { LLVMContextCreate() };
-        let module = unsafe { LLVMModuleCreateWithNameInContext(module.as_ptr(), llvm) };
-        let builder = unsafe { LLVMCreateBuilderInContext(llvm) };
-
         Ok(Self {
             path,
             meta,
             sources: BTreeMap::new(),
-            builder,
-            module,
-            llvm,
         })
     }
 
@@ -104,12 +88,20 @@ impl Project {
     }
 
     pub fn build(&mut self) -> Result<Package, ProjectBuildError> {
+        // Compile the sources.
         let pkg = &self.meta.package;
-        let meta = PackageMeta::new(pkg.name.clone(), pkg.version.clone());
+        let mut cx = Codegen::new(CString::new(pkg.name.as_str()).unwrap());
         let mut bin = Arch::new();
         let mut lib = Arch::new();
 
-        for (fqtn, src) in &self.sources {}
+        for (fqtn, src) in &self.sources {
+            for im in src.impls() {
+                for func in im.functions() {}
+            }
+        }
+
+        // Setup metadata.
+        let meta = PackageMeta::new(pkg.name.clone(), pkg.version.clone());
 
         Ok(Package::new(meta, bin, lib))
     }
@@ -150,14 +142,6 @@ impl Project {
         }
 
         Ok(())
-    }
-}
-
-impl Drop for Project {
-    fn drop(&mut self) {
-        unsafe { LLVMDisposeBuilder(self.builder) };
-        unsafe { LLVMDisposeModule(self.module) };
-        unsafe { LLVMContextDispose(self.llvm) };
     }
 }
 
