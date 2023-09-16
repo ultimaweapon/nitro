@@ -5,11 +5,12 @@ pub use self::func::*;
 pub use self::imp::*;
 pub use self::node::*;
 pub use self::stmt::*;
+pub use self::struc::*;
 pub use self::ty::*;
 
 use crate::lexer::{
     AsmKeyword, AttributeName, ClassKeyword, FnKeyword, Identifier, IfKeyword, ImplKeyword,
-    LetKeyword, Lexer, SyntaxError, Token,
+    LetKeyword, Lexer, StructKeyword, SyntaxError, Token,
 };
 use std::path::PathBuf;
 use thiserror::Error;
@@ -21,6 +22,7 @@ mod func;
 mod imp;
 mod node;
 mod stmt;
+mod struc;
 mod ty;
 
 ///  A parsed source file.
@@ -75,6 +77,16 @@ impl SourceFile {
             // Check token.
             match tok {
                 Token::AttributeName(name) => attrs = Some(Self::parse_attrs(&mut lex, name)?),
+                Token::StructKeyword(def) => {
+                    let name = lex.next_ident()?;
+                    self.can_define_type(&name)?;
+                    self.ty = Some(TypeDefinition::Struct(Self::parse_struct(
+                        &mut lex,
+                        attrs.take().unwrap_or_default(),
+                        def,
+                        name,
+                    )?));
+                }
                 Token::ClassKeyword(def) => {
                     let name = lex.next_ident()?;
                     self.can_define_type(&name)?;
@@ -124,7 +136,7 @@ impl SourceFile {
                 t => {
                     return Err(SyntaxError::new(
                         t.span().clone(),
-                        "this item is not allowed here",
+                        "this item is not allowed as a top-level",
                     ));
                 }
             }
@@ -176,13 +188,63 @@ impl SourceFile {
         Ok(Attribute::new(name, args))
     }
 
+    fn parse_struct(
+        lex: &mut Lexer,
+        attrs: Vec<Attribute>,
+        def: StructKeyword,
+        name: Identifier,
+    ) -> Result<Struct, SyntaxError> {
+        // Check if zero-sized struct. A zero-sized struct without a repr attribute is not allowed.
+        let tok = match lex.next()? {
+            Some(v) => v,
+            None => {
+                return Err(SyntaxError::new(
+                    name.span().clone(),
+                    "expect either ';' or '{' after struct name",
+                ));
+            }
+        };
+
+        match tok {
+            Token::Semicolon(_) => return Ok(Struct::new(attrs, def, name)),
+            Token::OpenCurly(_) => {}
+            v => {
+                return Err(SyntaxError::new(
+                    v.span().clone(),
+                    "expect either ';' or '{'",
+                ));
+            }
+        }
+
+        // Parse fields.
+        loop {
+            let tok = match lex.next()? {
+                Some(v) => v,
+                None => {
+                    return Err(SyntaxError::new(
+                        lex.last().unwrap().clone(),
+                        "expect an '}'",
+                    ));
+                }
+            };
+
+            match tok {
+                Token::CloseCurly(_) => break,
+                t => return Err(SyntaxError::new(t.span().clone(), "expect an '}'")),
+            }
+        }
+
+        Ok(Struct::new(attrs, def, name))
+    }
+
     fn parse_class(
         lex: &mut Lexer,
         attrs: Vec<Attribute>,
         def: ClassKeyword,
         name: Identifier,
     ) -> Result<Class, SyntaxError> {
-        // Check if zero-sized class.
+        // Check if zero-sized class. A zero-sized class cannot be instantiate. They act as a
+        // container for static methods.
         let tok = match lex.next()? {
             Some(v) => v,
             None => {
@@ -832,13 +894,15 @@ impl SourceFile {
 
 /// A type definition in a source file.
 pub enum TypeDefinition {
+    Struct(Struct),
     Class(Class),
 }
 
 impl TypeDefinition {
     pub fn name(&self) -> &Identifier {
         match self {
-            TypeDefinition::Class(v) => v.name(),
+            Self::Struct(v) => v.name(),
+            Self::Class(v) => v.name(),
         }
     }
 }

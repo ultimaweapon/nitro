@@ -17,6 +17,7 @@ pub enum Token {
     UnsignedLiteral(UnsignedLiteral),
     FloatLiteral(FloatLiteral),
     StringLiteral(StringLiteral),
+    StructKeyword(StructKeyword),
     ClassKeyword(ClassKeyword),
     ImplKeyword(ImplKeyword),
     FnKeyword(FnKeyword),
@@ -46,6 +47,7 @@ impl Token {
             Self::UnsignedLiteral(v) => &v.span,
             Self::FloatLiteral(v) => &v.span,
             Self::StringLiteral(v) => &v.span,
+            Self::StructKeyword(v) => &v.0,
             Self::ClassKeyword(v) => &v.0,
             Self::ImplKeyword(v) => &v.0,
             Self::FnKeyword(v) => &v.0,
@@ -146,6 +148,12 @@ impl From<FloatLiteral> for Token {
 impl From<StringLiteral> for Token {
     fn from(value: StringLiteral) -> Self {
         Self::StringLiteral(value)
+    }
+}
+
+impl From<StructKeyword> for Token {
+    fn from(value: StructKeyword) -> Self {
+        Self::StructKeyword(value)
     }
 }
 
@@ -363,6 +371,19 @@ pub struct StringLiteral {
 impl StringLiteral {
     pub fn new(span: Span, value: String) -> Self {
         Self { span, value }
+    }
+}
+
+/// An `struct` keyword.
+pub struct StructKeyword(Span);
+
+impl StructKeyword {
+    pub fn new(span: Span) -> Self {
+        Self(span)
+    }
+
+    pub fn span(&self) -> &Span {
+        &self.0
     }
 }
 

@@ -3,7 +3,7 @@ class Allocator;
 
 impl Allocator {
     @pub
-    fn Alloc(size: usize, align: usize): *u8 {
+    fn Alloc(size: UInt, align: UInt): *UInt8 {
         @cfg(unix)
         let ptr = aligned_alloc(align, size);
 
@@ -22,7 +22,7 @@ impl Allocator {
     }
 
     @pub
-    fn Free(ptr: *u8) {
+    fn Free(ptr: *UInt8) {
         @cfg(unix)
         free(ptr);
 
@@ -32,19 +32,19 @@ impl Allocator {
 
     @cfg(unix)
     @ext(C)
-    fn aligned_alloc(align: usize, size: usize): *u8;
+    fn aligned_alloc(align: UInt, size: UInt): *UInt8;
 
     @cfg(unix)
     @ext(C)
-    fn free(ptr: *u8);
+    fn free(ptr: *UInt8);
 
     @cfg(windows)
     @ext(C)
-    fn _aligned_malloc(size: usize, align: usize): *u8;
+    fn _aligned_malloc(size: UInt, align: UInt): *UInt8;
 
     @cfg(windows)
     @ext(C)
-    fn _aligned_free(ptr: *u8);
+    fn _aligned_free(ptr: *UInt8);
 
     @cfg(unix)
     @ext(C)
