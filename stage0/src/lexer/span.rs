@@ -1,20 +1,25 @@
+use std::cmp::{max, min};
 use std::fmt::{Display, Formatter};
+use std::ops::Add;
 use std::rc::Rc;
 
 /// A span in the source file.
 #[derive(Debug, Clone)]
 pub struct Span {
     source: Rc<String>,
-    offset: usize,
-    length: usize,
+    begin: usize,
+    end: usize,
 }
 
 impl Span {
     pub fn new(source: Rc<String>, offset: usize, length: usize) -> Self {
+        assert_ne!(*source.as_bytes().get(offset).unwrap(), b'\n');
+        assert_ne!(length, 0);
+
         Self {
             source,
-            offset,
-            length,
+            begin: offset,
+            end: offset + length,
         }
     }
 
@@ -23,69 +28,127 @@ impl Span {
     }
 
     pub fn offset(&self) -> usize {
-        self.offset
+        self.begin
+    }
+
+    fn create_indicator_line(target: &str, start: usize, end: usize) -> String {
+        let mut target = target.chars();
+        let mut line = String::new();
+
+        for _ in 0..start {
+            target.next().unwrap();
+            line.push(' ');
+        }
+
+        for _ in start..end {
+            line.push(if target.next().unwrap().is_whitespace() {
+                ' '
+            } else {
+                '^'
+            });
+        }
+
+        line
+    }
+}
+
+impl Add for &Span {
+    type Output = Span;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        assert!(Rc::ptr_eq(&self.source, &rhs.source));
+
+        let source = self.source.clone();
+        let begin = min(self.begin, rhs.begin);
+        let end = max(self.end, rhs.end);
+
+        Span { source, begin, end }
     }
 }
 
 impl Display for Span {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let head = &self.source[..self.offset];
-        let span = &self.source[self.offset..(self.offset + self.length)];
-        let tail = &self.source[(self.offset + self.length)..];
-        let mut lines = vec![String::new()];
+        let mut line = 0;
         let mut col = 0;
+        let mut lines = vec![(String::new(), Some(line))];
+        let mut offset = 0;
+        let mut start = None;
+        let mut end = None;
+        let mut first = None;
+        let mut last = None;
 
-        // Load lines from head.
-        for ch in head.chars() {
+        for ch in self.source.chars() {
+            if offset == self.begin {
+                start = Some(col);
+                first = Some(lines.len() - 1);
+            } else if offset == self.end {
+                end = Some(col);
+            }
+
             match ch {
                 '\r' => {}
                 '\n' => {
-                    lines.push(String::new());
+                    if let Some(c) = start {
+                        // Add an indicator line.
+                        let l = lines.last().unwrap().0.as_str();
+                        let e = end.unwrap_or_else(|| l.len());
+                        let l = Self::create_indicator_line(l, c, e);
+
+                        if l.chars().any(|c| !c.is_whitespace()) {
+                            last = Some(lines.len());
+                            lines.push((l, None));
+                        }
+
+                        // Check for multi-line span.
+                        if end.is_some() {
+                            start = None;
+                            end = None;
+                        } else {
+                            start = Some(0);
+                        }
+                    }
+
+                    // Insert next source line.
+                    line += 1;
+                    lines.push((String::new(), Some(line)));
                     col = 0;
                 }
-                v => {
-                    lines.last_mut().unwrap().push(v);
+                _ => {
+                    lines.last_mut().unwrap().0.push(ch);
                     col += 1;
                 }
             }
+
+            offset += ch.len_utf8();
         }
 
-        // Push span content.
-        lines.last_mut().unwrap().push_str(span);
+        if let Some(c) = start {
+            let l = lines.last().unwrap().0.as_str();
+            let e = l.len();
+            let l = Self::create_indicator_line(l, c, e);
 
-        // Load remaining line.
-        let mut tail = tail.chars();
-
-        while let Some(ch) = tail.next() {
-            match ch {
-                '\r' => {}
-                '\n' => {
-                    lines.push(String::new());
-                    break;
-                }
-                v => lines.last_mut().unwrap().push(v),
-            }
-        }
-
-        // Push a cursor.
-        for _ in 0..col {
-            lines.last_mut().unwrap().push(' ');
-        }
-
-        if self.length == 0 {
-            lines.last_mut().unwrap().push('^');
-        } else {
-            for _ in 0..self.length {
-                lines.last_mut().unwrap().push('^');
+            if l.chars().any(|c| !c.is_whitespace()) {
+                last = Some(lines.len());
+                lines.push((l, None));
             }
         }
 
         // Write.
-        for i in lines.len().checked_sub(10).unwrap_or(0)..(lines.len() - 1) {
-            writeln!(f, "{:>5} | {}", i + 1, lines[i])?;
-        }
+        let first = first.unwrap();
+        let last = last.unwrap();
 
-        write!(f, "      | {}", lines.last().unwrap())?;
+        for i in first..=last {
+            let l = &lines[i];
+
+            if let Some(n) = l.1 {
+                // Line from the source is never be the last line.
+                writeln!(f, "{:>5} | {}", n + 1, l.0)?;
+            } else if i == last {
+                write!(f, "      | {}", l.0)?;
+            } else {
+                writeln!(f, "      | {}", l.0)?;
+            }
+        }
 
         Ok(())
     }

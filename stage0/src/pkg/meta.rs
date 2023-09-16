@@ -24,6 +24,20 @@ pub struct PackageVersion {
     patch: u32,
 }
 
+impl PackageVersion {
+    pub fn major(&self) -> u32 {
+        self.major
+    }
+
+    pub fn minor(&self) -> u32 {
+        self.minor
+    }
+
+    pub fn patch(&self) -> u32 {
+        self.patch
+    }
+}
+
 impl<'a> Deserialize<'a> for PackageVersion {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

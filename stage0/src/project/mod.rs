@@ -2,6 +2,7 @@ pub use self::meta::*;
 
 use crate::ast::{ParseError, SourceFile};
 use crate::codegen::Codegen;
+use crate::lexer::SyntaxError;
 use crate::pkg::{Arch, Package, PackageMeta};
 use std::collections::{BTreeMap, VecDeque};
 use std::ffi::CString;
@@ -88,15 +89,28 @@ impl Project {
     }
 
     pub fn build(&mut self) -> Result<Package, ProjectBuildError> {
-        // Compile the sources.
+        // Setup codegen context.
         let pkg = &self.meta.package;
-        let mut cx = Codegen::new(CString::new(pkg.name.as_str()).unwrap());
+        let cx = Codegen::new(
+            &pkg.name,
+            &pkg.version,
+            CString::new(pkg.name.as_str()).unwrap(),
+        );
+
+        // Compile the sources.
         let mut bin = Arch::new();
         let mut lib = Arch::new();
 
         for (fqtn, src) in &self.sources {
             for im in src.impls() {
-                for func in im.functions() {}
+                for func in im.functions() {
+                    let func = match func.build(&cx, &fqtn) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            return Err(ProjectBuildError::InvalidSyntax(src.path().to_owned(), e));
+                        }
+                    };
+                }
             }
         }
 
@@ -176,4 +190,7 @@ pub enum ProjectLoadError {
 
 /// Represents an error when a [`Project`] is failed to build.
 #[derive(Debug, Error)]
-pub enum ProjectBuildError {}
+pub enum ProjectBuildError {
+    #[error("invalid syntax in {0}")]
+    InvalidSyntax(PathBuf, #[source] SyntaxError),
+}

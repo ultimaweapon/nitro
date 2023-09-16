@@ -4,6 +4,7 @@ pub use self::expr::*;
 pub use self::func::*;
 pub use self::imp::*;
 pub use self::node::*;
+pub use self::path::*;
 pub use self::stmt::*;
 pub use self::struc::*;
 pub use self::ty::*;
@@ -21,6 +22,7 @@ mod expr;
 mod func;
 mod imp;
 mod node;
+mod path;
 mod stmt;
 mod struc;
 mod ty;
@@ -53,6 +55,10 @@ impl SourceFile {
         }
 
         Ok(file)
+    }
+
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
     }
 
     pub fn ty(&self) -> Option<&TypeDefinition> {
@@ -843,7 +849,10 @@ impl SourceFile {
 
                 loop {
                     match lex.next()? {
-                        Some(Token::FullStop(_)) => fqtn.push(ident),
+                        Some(Token::FullStop(v)) => {
+                            fqtn.push(Token::FullStop(v));
+                            fqtn.push(Token::Identifier(ident));
+                        }
                         Some(_) => {
                             lex.undo();
                             break;
@@ -865,9 +874,9 @@ impl SourceFile {
                     };
                 }
 
-                fqtn.push(ident);
+                fqtn.push(Token::Identifier(ident));
 
-                TypeName::Ident(fqtn)
+                TypeName::Ident(Path::new(fqtn))
             }
             t => return Err(SyntaxError::new(t.span().clone(), "invalid type")),
         };

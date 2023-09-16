@@ -1,5 +1,7 @@
 use super::{Attribute, Statement, Type};
-use crate::lexer::{FnKeyword, Identifier};
+use crate::codegen::{Codegen, LlvmFunc, LlvmType, LlvmVoid};
+use crate::lexer::{FnKeyword, Identifier, SyntaxError};
+use std::ffi::CString;
 
 /// A function.
 pub struct Function {
@@ -28,6 +30,58 @@ impl Function {
             ret,
             body,
         }
+    }
+
+    pub fn build<'a, 'b: 'a>(
+        &self,
+        cx: &'a Codegen<'b>,
+        container: &str,
+    ) -> Result<LlvmFunc<'a, 'b>, SyntaxError> {
+        // Check if function already exists.
+        let name = CString::new(cx.encode_name(container, self.name.value())).unwrap();
+
+        if LlvmFunc::get(cx, &name).is_some() {
+            return Err(SyntaxError::new(
+                self.name.span().clone(),
+                "multiple definition of the same name",
+            ));
+        }
+
+        // Get params.
+        let mut params = Vec::<LlvmType<'a, 'b>>::new();
+
+        for p in &self.params {
+            let ty = match p.ty.build(cx) {
+                Some(v) => v,
+                None => {
+                    return Err(SyntaxError::new(
+                        p.ty.name().span(),
+                        "function parameter cannot be a never type",
+                    ));
+                }
+            };
+
+            params.push(ty);
+        }
+
+        // Get return type.
+        let mut never = false;
+        let ret = match &self.ret {
+            Some(v) => match v.build(cx) {
+                Some(v) => v,
+                None => {
+                    never = true;
+                    LlvmType::Void(LlvmVoid::new(cx))
+                }
+            },
+            None => LlvmType::Void(LlvmVoid::new(cx)),
+        };
+
+        // Create a function.
+        let func = LlvmFunc::new(cx, name, &params, ret);
+
+        // TODO: Build function body.
+        Ok(func)
     }
 }
 

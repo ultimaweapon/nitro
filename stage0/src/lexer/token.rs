@@ -30,6 +30,20 @@ pub enum Token {
 }
 
 impl Token {
+    pub fn is_full_stop(&self) -> bool {
+        match self {
+            Token::FullStop(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_identifier(&self) -> bool {
+        match self {
+            Token::Identifier(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn span(&self) -> &Span {
         match self {
             Self::ExclamationMark(v) => &v.0,
@@ -218,6 +232,10 @@ impl ExclamationMark {
     pub fn new(span: Span) -> Self {
         Self(span)
     }
+
+    pub fn span(&self) -> &Span {
+        &self.0
+    }
 }
 
 /// An `=` token.
@@ -284,6 +302,10 @@ pub struct OpenParenthesis(Span);
 impl OpenParenthesis {
     pub fn new(span: Span) -> Self {
         Self(span)
+    }
+
+    pub fn span(&self) -> &Span {
+        &self.0
     }
 }
 

@@ -10,7 +10,7 @@ pub struct ProjectMeta {
 /// A package table of `.nitro` file.
 #[derive(Deserialize)]
 pub struct ProjectPackage {
-    pub name: String,
+    pub name: String, // TODO: Only allow a-z, 0-9 and . alphabets.
     #[serde(rename = "type")]
     pub ty: ProjectType,
     pub version: PackageVersion,
