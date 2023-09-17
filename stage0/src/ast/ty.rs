@@ -1,6 +1,8 @@
-use super::Path;
+use super::{Path, Use};
 use crate::codegen::{Codegen, LlvmType, LlvmVoid};
-use crate::lexer::{Asterisk, CloseParenthesis, ExclamationMark, OpenParenthesis, Span};
+use crate::lexer::{
+    Asterisk, CloseParenthesis, ExclamationMark, OpenParenthesis, Span, SyntaxError,
+};
 
 /// A type of something (e.g. variable).
 pub struct Type {
@@ -17,15 +19,22 @@ impl Type {
         &self.name
     }
 
-    pub fn build<'a, 'b: 'a>(&self, cx: &'a Codegen<'b>) -> Option<LlvmType<'a, 'b>> {
+    pub fn build<'a, 'b: 'a>(
+        &self,
+        cx: &'a Codegen<'b>,
+        uses: &[Use],
+    ) -> Result<Option<LlvmType<'a, 'b>>, SyntaxError> {
         let mut ty = match &self.name {
             TypeName::Unit(_, _) => Some(LlvmType::Void(LlvmVoid::new(cx))),
             TypeName::Never(_) => None,
-            TypeName::Ident(_) => todo!(),
+            TypeName::Ident(n) => match cx.resolve(uses, n) {
+                Some(v) => Some(v),
+                None => return Err(SyntaxError::new(n.span(), "undefined type")),
+            },
         };
 
         // TODO: Resolve pointers.
-        ty
+        Ok(ty)
     }
 }
 

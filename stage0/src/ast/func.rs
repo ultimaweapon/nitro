@@ -51,7 +51,7 @@ impl Function {
         let mut params = Vec::<LlvmType<'a, 'b>>::new();
 
         for p in &self.params {
-            let ty = match p.ty.build(cx) {
+            let ty = match p.ty.build(cx, &[])? {
                 Some(v) => v,
                 None => {
                     return Err(SyntaxError::new(
@@ -67,7 +67,7 @@ impl Function {
         // Get return type.
         let mut never = false;
         let ret = match &self.ret {
-            Some(v) => match v.build(cx) {
+            Some(v) => match v.build(cx, &[])? {
                 Some(v) => v,
                 None => {
                     never = true;

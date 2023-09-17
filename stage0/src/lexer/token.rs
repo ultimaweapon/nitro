@@ -1,4 +1,5 @@
 use super::Span;
+use std::fmt::{Display, Formatter};
 
 /// A token in the source file.
 pub enum Token {
@@ -17,10 +18,12 @@ pub enum Token {
     UnsignedLiteral(UnsignedLiteral),
     FloatLiteral(FloatLiteral),
     StringLiteral(StringLiteral),
+    UseKeyword(UseKeyword),
     StructKeyword(StructKeyword),
     ClassKeyword(ClassKeyword),
     ImplKeyword(ImplKeyword),
     FnKeyword(FnKeyword),
+    SelfKeyword(SelfKeyword),
     LetKeyword(LetKeyword),
     IfKeyword(IfKeyword),
     IsKeyword(IsKeyword),
@@ -32,14 +35,21 @@ pub enum Token {
 impl Token {
     pub fn is_full_stop(&self) -> bool {
         match self {
-            Token::FullStop(_) => true,
+            Self::FullStop(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_self(&self) -> bool {
+        match self {
+            Self::SelfKeyword(_) => true,
             _ => false,
         }
     }
 
     pub fn is_identifier(&self) -> bool {
         match self {
-            Token::Identifier(_) => true,
+            Self::Identifier(_) => true,
             _ => false,
         }
     }
@@ -61,10 +71,12 @@ impl Token {
             Self::UnsignedLiteral(v) => &v.span,
             Self::FloatLiteral(v) => &v.span,
             Self::StringLiteral(v) => &v.span,
+            Self::UseKeyword(v) => &v.0,
             Self::StructKeyword(v) => &v.0,
             Self::ClassKeyword(v) => &v.0,
             Self::ImplKeyword(v) => &v.0,
             Self::FnKeyword(v) => &v.0,
+            Self::SelfKeyword(v) => &v.0,
             Self::LetKeyword(v) => &v.0,
             Self::IfKeyword(v) => &v.0,
             Self::IsKeyword(v) => &v.0,
@@ -165,6 +177,12 @@ impl From<StringLiteral> for Token {
     }
 }
 
+impl From<UseKeyword> for Token {
+    fn from(value: UseKeyword) -> Self {
+        Self::UseKeyword(value)
+    }
+}
+
 impl From<StructKeyword> for Token {
     fn from(value: StructKeyword) -> Self {
         Self::StructKeyword(value)
@@ -186,6 +204,12 @@ impl From<ImplKeyword> for Token {
 impl From<FnKeyword> for Token {
     fn from(value: FnKeyword) -> Self {
         Self::FnKeyword(value)
+    }
+}
+
+impl From<SelfKeyword> for Token {
+    fn from(value: SelfKeyword) -> Self {
+        Self::SelfKeyword(value)
     }
 }
 
@@ -225,6 +249,42 @@ impl From<Identifier> for Token {
     }
 }
 
+impl Display for Token {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let t: &dyn Display = match self {
+            Self::ExclamationMark(v) => v,
+            Self::Equals(v) => v,
+            Self::Asterisk(v) => v,
+            Self::FullStop(v) => v,
+            Self::Comma(v) => v,
+            Self::Colon(v) => v,
+            Self::Semicolon(v) => v,
+            Self::OpenParenthesis(v) => v,
+            Self::CloseParenthesis(v) => v,
+            Self::OpenCurly(v) => v,
+            Self::CloseCurly(v) => v,
+            Self::AttributeName(v) => v,
+            Self::UnsignedLiteral(v) => v,
+            Self::FloatLiteral(v) => v,
+            Self::StringLiteral(v) => v,
+            Self::UseKeyword(v) => v,
+            Self::StructKeyword(v) => v,
+            Self::ClassKeyword(v) => v,
+            Self::ImplKeyword(v) => v,
+            Self::FnKeyword(v) => v,
+            Self::SelfKeyword(v) => v,
+            Self::LetKeyword(v) => v,
+            Self::IfKeyword(v) => v,
+            Self::IsKeyword(v) => v,
+            Self::AsmKeyword(v) => v,
+            Self::NullKeyword(v) => v,
+            Self::Identifier(v) => v,
+        };
+
+        t.fmt(f)
+    }
+}
+
 /// An `!` token.
 pub struct ExclamationMark(Span);
 
@@ -238,12 +298,24 @@ impl ExclamationMark {
     }
 }
 
+impl Display for ExclamationMark {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("!")
+    }
+}
+
 /// An `=` token.
 pub struct Equals(Span);
 
 impl Equals {
     pub fn new(span: Span) -> Self {
         Self(span)
+    }
+}
+
+impl Display for Equals {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("=")
     }
 }
 
@@ -260,12 +332,24 @@ impl Asterisk {
     }
 }
 
+impl Display for Asterisk {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("*")
+    }
+}
+
 /// An `.` token.
 pub struct FullStop(Span);
 
 impl FullStop {
     pub fn new(span: Span) -> Self {
         Self(span)
+    }
+}
+
+impl Display for FullStop {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(".")
     }
 }
 
@@ -278,6 +362,12 @@ impl Comma {
     }
 }
 
+impl Display for Comma {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(",")
+    }
+}
+
 /// An `:` token.
 pub struct Colon(Span);
 
@@ -287,12 +377,24 @@ impl Colon {
     }
 }
 
+impl Display for Colon {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(":")
+    }
+}
+
 /// An `;` token.
 pub struct Semicolon(Span);
 
 impl Semicolon {
     pub fn new(span: Span) -> Self {
         Self(span)
+    }
+}
+
+impl Display for Semicolon {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(";")
     }
 }
 
@@ -309,6 +411,12 @@ impl OpenParenthesis {
     }
 }
 
+impl Display for OpenParenthesis {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("(")
+    }
+}
+
 /// An `)` token.
 pub struct CloseParenthesis(Span);
 
@@ -322,12 +430,24 @@ impl CloseParenthesis {
     }
 }
 
+impl Display for CloseParenthesis {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(")")
+    }
+}
+
 /// An `{` token.
 pub struct OpenCurly(Span);
 
 impl OpenCurly {
     pub fn new(span: Span) -> Self {
         Self(span)
+    }
+}
+
+impl Display for OpenCurly {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("{")
     }
 }
 
@@ -341,6 +461,12 @@ impl CloseCurly {
 
     pub fn span(&self) -> &Span {
         &self.0
+    }
+}
+
+impl Display for CloseCurly {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("}")
     }
 }
 
@@ -360,6 +486,13 @@ impl AttributeName {
     }
 }
 
+impl Display for AttributeName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("@")?;
+        f.write_str(&self.value)
+    }
+}
+
 /// An unsigned integer literal (e.g. `123`).
 pub struct UnsignedLiteral {
     span: Span,
@@ -369,6 +502,12 @@ pub struct UnsignedLiteral {
 impl UnsignedLiteral {
     pub fn new(span: Span, value: u64) -> Self {
         Self { span, value }
+    }
+}
+
+impl Display for UnsignedLiteral {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.value.fmt(f)
     }
 }
 
@@ -384,6 +523,12 @@ impl FloatLiteral {
     }
 }
 
+impl Display for FloatLiteral {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.value.fmt(f)
+    }
+}
+
 /// A string literal (e.g. `"abc"`).
 pub struct StringLiteral {
     span: Span,
@@ -393,6 +538,33 @@ pub struct StringLiteral {
 impl StringLiteral {
     pub fn new(span: Span, value: String) -> Self {
         Self { span, value }
+    }
+}
+
+impl Display for StringLiteral {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("\"")?;
+        f.write_str(&self.value)?;
+        f.write_str("\"")
+    }
+}
+
+/// An `use` keyword.
+pub struct UseKeyword(Span);
+
+impl UseKeyword {
+    pub fn new(span: Span) -> Self {
+        Self(span)
+    }
+
+    pub fn span(&self) -> &Span {
+        &self.0
+    }
+}
+
+impl Display for UseKeyword {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("use")
     }
 }
 
@@ -409,6 +581,12 @@ impl StructKeyword {
     }
 }
 
+impl Display for StructKeyword {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("struct")
+    }
+}
+
 /// An `class` keyword.
 pub struct ClassKeyword(Span);
 
@@ -419,6 +597,12 @@ impl ClassKeyword {
 
     pub fn span(&self) -> &Span {
         &self.0
+    }
+}
+
+impl Display for ClassKeyword {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("class")
     }
 }
 
@@ -435,12 +619,39 @@ impl ImplKeyword {
     }
 }
 
+impl Display for ImplKeyword {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("impl")
+    }
+}
+
 /// An `fn` keyword.
 pub struct FnKeyword(Span);
 
 impl FnKeyword {
     pub fn new(span: Span) -> Self {
         Self(span)
+    }
+}
+
+impl Display for FnKeyword {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("fn")
+    }
+}
+
+/// An `self` keyword.
+pub struct SelfKeyword(Span);
+
+impl SelfKeyword {
+    pub fn new(span: Span) -> Self {
+        Self(span)
+    }
+}
+
+impl Display for SelfKeyword {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("self")
     }
 }
 
@@ -453,12 +664,24 @@ impl LetKeyword {
     }
 }
 
+impl Display for LetKeyword {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("let")
+    }
+}
+
 /// An `if` keyword.
 pub struct IfKeyword(Span);
 
 impl IfKeyword {
     pub fn new(span: Span) -> Self {
         Self(span)
+    }
+}
+
+impl Display for IfKeyword {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("if")
     }
 }
 
@@ -471,6 +694,12 @@ impl IsKeyword {
     }
 }
 
+impl Display for IsKeyword {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("is")
+    }
+}
+
 /// An `asm` keyword.
 pub struct AsmKeyword(Span);
 
@@ -480,12 +709,24 @@ impl AsmKeyword {
     }
 }
 
+impl Display for AsmKeyword {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("asm")
+    }
+}
+
 /// An `null` keyword.
 pub struct NullKeyword(Span);
 
 impl NullKeyword {
     pub fn new(span: Span) -> Self {
         Self(span)
+    }
+}
+
+impl Display for NullKeyword {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("null")
     }
 }
 
@@ -512,5 +753,11 @@ impl Identifier {
 impl PartialEq for Identifier {
     fn eq(&self, other: &Self) -> bool {
         self.value == other.value
+    }
+}
+
+impl Display for Identifier {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.value.fmt(f)
     }
 }

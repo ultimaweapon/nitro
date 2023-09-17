@@ -1,7 +1,7 @@
 pub use self::meta::*;
 
 use crate::ast::{ParseError, SourceFile};
-use crate::codegen::Codegen;
+use crate::codegen::{Codegen, Resolver};
 use crate::lexer::SyntaxError;
 use crate::pkg::{Arch, Package, PackageMeta};
 use std::collections::{BTreeMap, VecDeque};
@@ -89,19 +89,28 @@ impl Project {
     }
 
     pub fn build(&mut self) -> Result<Package, ProjectBuildError> {
+        // Setup type resolver.
+        let resolver: Resolver<'_> = Resolver::new();
+
         // Setup codegen context.
         let pkg = &self.meta.package;
-        let cx = Codegen::new(
+        let mut cx = Codegen::new(
             &pkg.name,
             &pkg.version,
             CString::new(pkg.name.as_str()).unwrap(),
+            resolver,
         );
 
         // Compile the sources.
-        let mut bin = Arch::new();
-        let mut lib = Arch::new();
+        let bin = Arch::new();
+        let lib = Arch::new();
 
         for (fqtn, src) in &self.sources {
+            cx.set_namespace(match fqtn.rfind('.') {
+                Some(i) => &fqtn[..i],
+                None => "",
+            });
+
             for im in src.impls() {
                 for func in im.functions() {
                     let func = match func.build(&cx, &fqtn) {

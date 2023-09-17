@@ -296,7 +296,9 @@ impl Lexer {
             "impl" => ImplKeyword::new(span).into(),
             "let" => LetKeyword::new(span).into(),
             "null" => NullKeyword::new(span).into(),
+            "self" => SelfKeyword::new(span).into(),
             "struct" => StructKeyword::new(span).into(),
+            "use" => UseKeyword::new(span).into(),
             _ => Identifier::new(span, ident).into(),
         };
 
