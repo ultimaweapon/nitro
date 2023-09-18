@@ -9,7 +9,7 @@ use llvm_sys::core::{
     LLVMContextCreate, LLVMContextDispose, LLVMDisposeModule, LLVMModuleCreateWithNameInContext,
 };
 use llvm_sys::prelude::{LLVMContextRef, LLVMModuleRef};
-use llvm_sys::target::{LLVMDisposeTargetData, LLVMTargetDataRef};
+use llvm_sys::target::{LLVMDisposeTargetData, LLVMSetModuleDataLayout, LLVMTargetDataRef};
 use llvm_sys::target_machine::{
     LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetDataLayout, LLVMCreateTargetMachine,
     LLVMDisposeTargetMachine, LLVMGetTargetFromTriple, LLVMRelocMode, LLVMTargetMachineRef,
@@ -82,6 +82,8 @@ impl<'a> Codegen<'a> {
         // Create LLVM module.
         let llvm = unsafe { LLVMContextCreate() };
         let module = unsafe { LLVMModuleCreateWithNameInContext(module.as_ptr(), llvm) };
+
+        unsafe { LLVMSetModuleDataLayout(module, layout) };
 
         Self {
             module,
