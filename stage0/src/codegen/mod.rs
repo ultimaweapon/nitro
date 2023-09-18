@@ -9,7 +9,9 @@ use llvm_sys::core::{
     LLVMContextCreate, LLVMContextDispose, LLVMDisposeModule, LLVMModuleCreateWithNameInContext,
 };
 use llvm_sys::prelude::{LLVMContextRef, LLVMModuleRef};
-use llvm_sys::target::{LLVMDisposeTargetData, LLVMSetModuleDataLayout, LLVMTargetDataRef};
+use llvm_sys::target::{
+    LLVMDisposeTargetData, LLVMPointerSize, LLVMSetModuleDataLayout, LLVMTargetDataRef,
+};
 use llvm_sys::target_machine::{
     LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetDataLayout, LLVMCreateTargetMachine,
     LLVMDisposeTargetMachine, LLVMGetTargetFromTriple, LLVMRelocMode, LLVMTargetMachineRef,
@@ -101,6 +103,11 @@ impl<'a> Codegen<'a> {
         self.namespace = v;
     }
 
+    /// Returns the pointer size, in bytes.
+    pub fn pointer_size(&self) -> u32 {
+        unsafe { LLVMPointerSize(self.layout) }
+    }
+
     pub fn encode_name(&self, container: &str, name: &str) -> String {
         // TODO: Create a mangleg name according to Itanium C++ ABI.
         // https://itanium-cxx-abi.github.io/cxx-abi/abi.html might be useful.
@@ -175,7 +182,10 @@ impl<'a> Codegen<'a> {
         match ty {
             Struct::Primitive(_, r, _, _) => match r {
                 Representation::U8 => LlvmType::U8(LlvmU8::new(self)),
-                Representation::Un => todo!(),
+                Representation::Un => match self.pointer_size() {
+                    8 => LlvmType::U64(LlvmU64::new(self)),
+                    _ => todo!(),
+                },
             },
             Struct::Composite(_, _, _) => todo!(),
         }

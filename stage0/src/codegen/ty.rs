@@ -1,5 +1,7 @@
 use super::Codegen;
-use llvm_sys::core::{LLVMInt8TypeInContext, LLVMPointerTypeInContext, LLVMVoidTypeInContext};
+use llvm_sys::core::{
+    LLVMInt64TypeInContext, LLVMInt8TypeInContext, LLVMPointerTypeInContext, LLVMVoidTypeInContext,
+};
 use llvm_sys::prelude::LLVMTypeRef;
 use std::marker::PhantomData;
 
@@ -7,6 +9,7 @@ use std::marker::PhantomData;
 pub enum LlvmType<'a, 'b: 'a> {
     Void(LlvmVoid<'a, 'b>),
     U8(LlvmU8<'a, 'b>),
+    U64(LlvmU64<'a, 'b>),
     Ptr(LlvmPtr<'a, 'b>),
 }
 
@@ -15,6 +18,7 @@ impl<'a, 'b: 'a> LlvmType<'a, 'b> {
         match self {
             Self::Void(v) => v.ty,
             Self::U8(v) => v.ty,
+            Self::U64(v) => v.ty,
             Self::Ptr(v) => v.ty,
         }
     }
@@ -35,7 +39,7 @@ impl<'a, 'b: 'a> LlvmVoid<'a, 'b> {
     }
 }
 
-/// A `u8` type.
+/// A 8-bits unsigned integer.
 pub struct LlvmU8<'a, 'b: 'a> {
     ty: LLVMTypeRef,
     phantom: PhantomData<&'a Codegen<'b>>,
@@ -45,6 +49,21 @@ impl<'a, 'b: 'a> LlvmU8<'a, 'b> {
     pub fn new(cx: &'a Codegen<'b>) -> Self {
         Self {
             ty: unsafe { LLVMInt8TypeInContext(cx.llvm) },
+            phantom: PhantomData,
+        }
+    }
+}
+
+/// A 64-bits unsigned integer.
+pub struct LlvmU64<'a, 'b: 'a> {
+    ty: LLVMTypeRef,
+    phantom: PhantomData<&'a Codegen<'b>>,
+}
+
+impl<'a, 'b: 'a> LlvmU64<'a, 'b> {
+    pub fn new(cx: &'a Codegen<'b>) -> Self {
+        Self {
+            ty: unsafe { LLVMInt64TypeInContext(cx.llvm) },
             phantom: PhantomData,
         }
     }

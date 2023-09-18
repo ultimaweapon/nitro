@@ -1,5 +1,5 @@
 use super::{Path, Use};
-use crate::codegen::{Codegen, LlvmType, LlvmVoid};
+use crate::codegen::{Codegen, LlvmPtr, LlvmType, LlvmVoid};
 use crate::lexer::{
     Asterisk, CloseParenthesis, ExclamationMark, OpenParenthesis, Span, SyntaxError,
 };
@@ -24,6 +24,7 @@ impl Type {
         cx: &'a Codegen<'b>,
         uses: &[Use],
     ) -> Result<Option<LlvmType<'a, 'b>>, SyntaxError> {
+        // Resolve base type.
         let mut ty = match &self.name {
             TypeName::Unit(_, _) => Some(LlvmType::Void(LlvmVoid::new(cx))),
             TypeName::Never(_) => None,
@@ -33,7 +34,19 @@ impl Type {
             },
         };
 
-        // TODO: Resolve pointers.
+        // Resolve pointers.
+        for p in self.prefixes.iter().rev() {
+            ty = match ty {
+                Some(v) => Some(LlvmType::Ptr(LlvmPtr::new(cx, v))),
+                None => {
+                    return Err(SyntaxError::new(
+                        p.span().clone(),
+                        "a pointer to never type is not allowed",
+                    ))
+                }
+            };
+        }
+
         Ok(ty)
     }
 }
