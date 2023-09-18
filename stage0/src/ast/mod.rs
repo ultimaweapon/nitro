@@ -157,10 +157,12 @@ impl SourceFile {
     }
 
     fn parse_attrs(lex: &mut Lexer, first: AttributeName) -> Result<Vec<Attribute>, SyntaxError> {
+        // Parse the first attribute.
         let mut attrs: Vec<Attribute> = Vec::new();
 
         attrs.push(Self::parse_attr(lex, first)?);
 
+        // Parse the remaining if available.
         loop {
             let tok = match lex.next()? {
                 Some(v) => v,
@@ -181,22 +183,134 @@ impl SourceFile {
             }
         }
 
+        // Check for multiple built-in attributes.
+        let mut vis = false;
+        let mut cfg = false;
+        let mut ext = false;
+        let mut repr = false;
+
+        for a in &attrs {
+            match a {
+                Attribute::Pub(n) => {
+                    if vis {
+                        return Err(SyntaxError::new(
+                            n.span().clone(),
+                            "multiple pub attribute is not allowed",
+                        ));
+                    } else {
+                        vis = true;
+                    }
+                }
+                Attribute::Cfg(n, _) => {
+                    if cfg {
+                        return Err(SyntaxError::new(
+                            n.span().clone(),
+                            "multiple cfg attribute is not allowed",
+                        ));
+                    } else {
+                        cfg = true;
+                    }
+                }
+                Attribute::Ext(n, _) => {
+                    if ext {
+                        return Err(SyntaxError::new(
+                            n.span().clone(),
+                            "multiple ext attribute is not allowed",
+                        ));
+                    } else {
+                        ext = true;
+                    }
+                }
+                Attribute::Repr(n, _) => {
+                    if repr {
+                        return Err(SyntaxError::new(
+                            n.span().clone(),
+                            "multiple repr attribute is not allowed",
+                        ));
+                    } else {
+                        repr = true;
+                    }
+                }
+                Attribute::Custom(_, _) => {}
+            }
+        }
+
         Ok(attrs)
     }
 
     fn parse_attr(lex: &mut Lexer, name: AttributeName) -> Result<Attribute, SyntaxError> {
-        let args = match lex.next()? {
-            Some(Token::OpenParenthesis(_)) => Some(Self::parse_args(lex)?),
-            Some(Token::CloseParenthesis(v)) => {
-                return Err(SyntaxError::new(v.span().clone(), "expect '('"));
+        let attr = match name.value() {
+            "cfg" => {
+                lex.next_op()?;
+                let arg = Self::parse_exprs(lex)?;
+                lex.next_cp()?;
+
+                Attribute::Cfg(name, arg)
             }
-            _ => {
-                lex.undo();
-                None
+            "ext" => {
+                lex.next_op()?;
+                let ext = lex.next_ident()?;
+                lex.next_cp()?;
+
+                Attribute::Ext(
+                    name,
+                    match ext.value() {
+                        "C" => Extern::C,
+                        _ => return Err(SyntaxError::new(ext.span().clone(), "unknown extern")),
+                    },
+                )
             }
+            "pub" => match lex.next()? {
+                Some(Token::OpenParenthesis(_)) => match lex.next()? {
+                    Some(Token::CloseParenthesis(_)) => Attribute::Pub(name),
+                    _ => {
+                        return Err(SyntaxError::new(
+                            name.span().clone(),
+                            "expect zero argument for this attribute",
+                        ));
+                    }
+                },
+                Some(_) => {
+                    lex.undo();
+                    Attribute::Pub(name)
+                }
+                None => Attribute::Pub(name),
+            },
+            "repr" => {
+                lex.next_op()?;
+                let repr = lex.next_ident()?;
+                lex.next_cp()?;
+
+                Attribute::Repr(
+                    name,
+                    match repr.value() {
+                        "u8" => Representation::U8,
+                        "un" => Representation::Un,
+                        _ => {
+                            return Err(SyntaxError::new(
+                                repr.span().clone(),
+                                "unknown representation",
+                            ));
+                        }
+                    },
+                )
+            }
+            _ => Attribute::Custom(
+                name,
+                match lex.next()? {
+                    Some(Token::OpenParenthesis(_)) => Some(Self::parse_args(lex)?),
+                    Some(Token::CloseParenthesis(v)) => {
+                        return Err(SyntaxError::new(v.span().clone(), "expect '('"));
+                    }
+                    _ => {
+                        lex.undo();
+                        None
+                    }
+                },
+            ),
         };
 
-        Ok(Attribute::new(name, args))
+        Ok(attr)
     }
 
     fn parse_use(lex: &mut Lexer, def: UseKeyword) -> Result<Use, SyntaxError> {
@@ -282,51 +396,52 @@ impl SourceFile {
 
     fn parse_struct(
         lex: &mut Lexer,
-        attrs: Vec<Attribute>,
+        mut attrs: Vec<Attribute>,
         def: StructKeyword,
         name: Identifier,
     ) -> Result<Struct, SyntaxError> {
-        // Check if zero-sized struct. A zero-sized struct without a repr attribute is not allowed.
-        let tok = match lex.next()? {
-            Some(v) => v,
-            None => {
-                return Err(SyntaxError::new(
-                    name.span().clone(),
-                    "expect either ';' or '{' after struct name",
-                ));
-            }
-        };
+        // Check if a primitive struct.
+        let mut repr = None;
 
-        match tok {
-            Token::Semicolon(_) => return Ok(Struct::new(attrs, def, name)),
-            Token::OpenCurly(_) => {}
-            v => {
-                return Err(SyntaxError::new(
-                    v.span().clone(),
-                    "expect either ';' or '{'",
-                ));
+        for (i, a) in attrs.iter().enumerate() {
+            if let Attribute::Repr(_, _) = a {
+                repr = Some(i);
+                break;
             }
         }
 
+        if let Some(i) = repr {
+            let repr = match attrs.remove(i) {
+                Attribute::Repr(n, r) => r,
+                _ => unreachable!(),
+            };
+
+            lex.next_semicolon()?;
+
+            return Ok(Struct::Primitive(attrs, repr, def, name));
+        }
+
         // Parse fields.
+        lex.next_oc()?;
+
         loop {
             let tok = match lex.next()? {
                 Some(v) => v,
                 None => {
                     return Err(SyntaxError::new(
                         lex.last().unwrap().clone(),
-                        "expect an '}'",
+                        "expect '}' after this",
                     ));
                 }
             };
 
             match tok {
                 Token::CloseCurly(_) => break,
-                t => return Err(SyntaxError::new(t.span().clone(), "expect an '}'")),
+                t => return Err(SyntaxError::new(t.span().clone(), "expect '}'")),
             }
         }
 
-        Ok(Struct::new(attrs, def, name))
+        Ok(Struct::Composite(attrs, def, name))
     }
 
     fn parse_class(

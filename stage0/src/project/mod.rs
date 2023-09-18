@@ -90,7 +90,9 @@ impl Project {
 
     pub fn build(&mut self) -> Result<Package, ProjectBuildError> {
         // Setup type resolver.
-        let resolver: Resolver<'_> = Resolver::new();
+        let mut resolver: Resolver<'_> = Resolver::new();
+
+        resolver.populate_project_types(&self.sources);
 
         // Setup codegen context.
         let pkg = &self.meta.package;

@@ -484,6 +484,11 @@ impl AttributeName {
     pub fn span(&self) -> &Span {
         &self.span
     }
+
+    /// Returns the attribute name without `@` prefixes.
+    pub fn value(&self) -> &str {
+        self.value.as_ref()
+    }
 }
 
 impl Display for AttributeName {

@@ -1,4 +1,4 @@
-use super::Attribute;
+use super::{Attribute, Representation};
 use crate::lexer::{Identifier, Span, StructKeyword};
 
 /// A struct.
@@ -7,22 +7,25 @@ use crate::lexer::{Identifier, Span, StructKeyword};
 /// All fields must also be a struct and will always public.
 ///
 /// Struct type cannot be a generic type and does not supports inheritance.
-pub struct Struct {
-    attrs: Vec<Attribute>,
-    def: StructKeyword,
-    name: Identifier,
+pub enum Struct {
+    Primitive(Vec<Attribute>, Representation, StructKeyword, Identifier),
+    Composite(Vec<Attribute>, StructKeyword, Identifier),
 }
 
 impl Struct {
-    pub fn new(attrs: Vec<Attribute>, def: StructKeyword, name: Identifier) -> Self {
-        Self { attrs, def, name }
-    }
-
     pub fn span(&self) -> &Span {
-        self.def.span()
+        let def = match self {
+            Self::Primitive(_, _, d, _) => d,
+            Self::Composite(_, d, _) => d,
+        };
+
+        def.span()
     }
 
     pub fn name(&self) -> &Identifier {
-        &self.name
+        match self {
+            Self::Primitive(_, _, _, i) => i,
+            Self::Composite(_, _, i) => i,
+        }
     }
 }

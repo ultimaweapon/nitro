@@ -14,8 +14,21 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    pub fn resolve(&self, name: &str) -> Option<ResolvedType<'a>> {
-        todo!()
+    pub fn populate_project_types<S>(&mut self, set: S)
+    where
+        S: IntoIterator<Item = (&'a String, &'a SourceFile)>,
+    {
+        for (name, ty) in set {
+            let mut key = String::from("self.");
+
+            key.push_str(&name);
+
+            assert!(self.types.insert(key, ResolvedType::Project(ty)).is_none());
+        }
+    }
+
+    pub fn resolve(&self, name: &str) -> Option<&ResolvedType<'a>> {
+        self.types.get(name)
     }
 }
 

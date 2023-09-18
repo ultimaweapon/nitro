@@ -2,7 +2,7 @@ pub use self::func::*;
 pub use self::resolver::*;
 pub use self::ty::*;
 
-use crate::ast::{Path, Use};
+use crate::ast::{Path, Representation, SourceFile, Struct, TypeDefinition, Use};
 use crate::pkg::PackageVersion;
 use llvm_sys::core::{
     LLVMContextCreate, LLVMContextDispose, LLVMDisposeModule, LLVMModuleCreateWithNameInContext,
@@ -54,16 +54,10 @@ impl<'a> Codegen<'a> {
         // TODO: Create a mangleg name according to Itanium C++ ABI.
         // https://itanium-cxx-abi.github.io/cxx-abi/abi.html might be useful.
         if self.version.major() == 0 {
-            format!(
-                "{}::0.{}::{}.{}",
-                self.pkg,
-                self.version.minor(),
-                container,
-                name
-            )
+            format!("{}::{}.{}", self.pkg, container, name)
         } else {
             format!(
-                "{}::{}::{}.{}",
+                "{}::v{}::{}.{}",
                 self.pkg,
                 self.version.major(),
                 container,
@@ -110,10 +104,30 @@ impl<'a> Codegen<'a> {
             None => name.to_string(),
         };
 
-        // Get LLVM type.
-        let ty = self.resolver.resolve(&name)?;
+        // Resolve type and build LLVM type.
+        let ty = match self.resolver.resolve(&name)? {
+            ResolvedType::Project(v) => self.build_project_type(&name, v),
+            ResolvedType::External(_) => todo!(),
+        };
 
-        todo!()
+        Some(ty)
+    }
+
+    fn build_project_type(&self, name: &str, ty: &SourceFile) -> LlvmType<'_, 'a> {
+        match ty.ty().unwrap() {
+            TypeDefinition::Struct(v) => self.build_project_struct(name, v),
+            TypeDefinition::Class(_) => todo!(),
+        }
+    }
+
+    fn build_project_struct(&self, name: &str, ty: &Struct) -> LlvmType<'_, 'a> {
+        match ty {
+            Struct::Primitive(_, r, _, _) => match r {
+                Representation::U8 => LlvmType::U8(LlvmU8::new(self)),
+                Representation::Un => todo!(),
+            },
+            Struct::Composite(_, _, _) => todo!(),
+        }
     }
 }
 
