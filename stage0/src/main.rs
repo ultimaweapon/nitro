@@ -1,5 +1,8 @@
 use crate::ast::ParseError;
 use crate::project::{Project, ProjectLoadError};
+use llvm_sys::target::{
+    LLVM_InitializeAllTargetInfos, LLVM_InitializeAllTargetMCs, LLVM_InitializeAllTargets,
+};
 use std::error::Error;
 use std::fmt::Write;
 use std::path::PathBuf;
@@ -12,6 +15,13 @@ mod pkg;
 mod project;
 
 fn main() -> ExitCode {
+    // Initialize LLVM.
+    unsafe {
+        LLVM_InitializeAllTargetInfos();
+        LLVM_InitializeAllTargets();
+        LLVM_InitializeAllTargetMCs();
+    }
+
     // Get binary name.
     let mut args = std::env::args_os();
     let app = match args.next() {

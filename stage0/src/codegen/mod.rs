@@ -1,5 +1,6 @@
 pub use self::func::*;
 pub use self::resolver::*;
+pub use self::target::*;
 pub use self::ty::*;
 
 use crate::ast::{Path, Representation, SourceFile, Struct, TypeDefinition, Use};
@@ -8,10 +9,17 @@ use llvm_sys::core::{
     LLVMContextCreate, LLVMContextDispose, LLVMDisposeModule, LLVMModuleCreateWithNameInContext,
 };
 use llvm_sys::prelude::{LLVMContextRef, LLVMModuleRef};
+use llvm_sys::target::{LLVMDisposeTargetData, LLVMTargetDataRef};
+use llvm_sys::target_machine::{
+    LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetDataLayout, LLVMCreateTargetMachine,
+    LLVMDisposeTargetMachine, LLVMGetTargetFromTriple, LLVMRelocMode, LLVMTargetMachineRef,
+};
 use std::ffi::CStr;
+use std::ptr::{null, null_mut};
 
 mod func;
 mod resolver;
+mod target;
 mod ty;
 
 /// A context for code generation.
@@ -23,18 +31,57 @@ pub struct Codegen<'a> {
     pkg: &'a str,
     version: &'a PackageVersion,
     namespace: &'a str,
-    resolver: Resolver<'a>,
+    layout: LLVMTargetDataRef,
+    target: LLVMTargetMachineRef,
+    resolver: &'a Resolver<'a>,
 }
 
 impl<'a> Codegen<'a> {
-    pub fn new<M: AsRef<CStr>>(
+    pub fn new<T, M>(
         pkg: &'a str,
         version: &'a PackageVersion,
+        target: Target<T>,
         module: M,
-        resolver: Resolver<'a>,
-    ) -> Self {
+        resolver: &'a Resolver<'a>,
+    ) -> Self
+    where
+        T: AsRef<CStr>,
+        M: AsRef<CStr>,
+    {
+        let triple = target.triple();
+        let module = module.as_ref();
+
+        // Get LLVM target.
+        let target = {
+            let mut ptr = null_mut();
+
+            assert_eq!(
+                unsafe { LLVMGetTargetFromTriple(triple.as_ptr(), &mut ptr, null_mut()) },
+                0
+            );
+
+            ptr
+        };
+
+        // Create LLVM target machine.
+        let target = unsafe {
+            LLVMCreateTargetMachine(
+                target,
+                triple.as_ptr(),
+                null(),
+                null(),
+                LLVMCodeGenOptLevel::LLVMCodeGenLevelDefault,
+                LLVMRelocMode::LLVMRelocDefault,
+                LLVMCodeModel::LLVMCodeModelDefault,
+            )
+        };
+
+        // Create LLVM layout.
+        let layout = unsafe { LLVMCreateTargetDataLayout(target) };
+
+        // Create LLVM module.
         let llvm = unsafe { LLVMContextCreate() };
-        let module = unsafe { LLVMModuleCreateWithNameInContext(module.as_ref().as_ptr(), llvm) };
+        let module = unsafe { LLVMModuleCreateWithNameInContext(module.as_ptr(), llvm) };
 
         Self {
             module,
@@ -42,6 +89,8 @@ impl<'a> Codegen<'a> {
             pkg,
             version,
             namespace: "",
+            layout,
+            target,
             resolver,
         }
     }
@@ -135,5 +184,7 @@ impl<'a> Drop for Codegen<'a> {
     fn drop(&mut self) {
         unsafe { LLVMDisposeModule(self.module) };
         unsafe { LLVMContextDispose(self.llvm) };
+        unsafe { LLVMDisposeTargetData(self.layout) };
+        unsafe { LLVMDisposeTargetMachine(self.target) };
     }
 }

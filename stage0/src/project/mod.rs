@@ -1,7 +1,7 @@
 pub use self::meta::*;
 
 use crate::ast::{ParseError, SourceFile};
-use crate::codegen::{Codegen, Resolver};
+use crate::codegen::{Codegen, Resolver, Target};
 use crate::lexer::SyntaxError;
 use crate::pkg::{Arch, Package, PackageMeta};
 use std::collections::{BTreeMap, VecDeque};
@@ -19,6 +19,12 @@ pub struct Project {
 }
 
 impl Project {
+    pub const SUPPORTED_TARGETS: [&str; 3] = [
+        "x86_64-apple-darwin",
+        "x86_64-pc-win32-msvc",
+        "x86_64-unknown-linux-gnu",
+    ];
+
     pub fn open<P: Into<PathBuf>>(path: P) -> Result<Self, ProjectOpenError> {
         // Read the project.
         let path = path.into();
@@ -88,44 +94,22 @@ impl Project {
         Ok(())
     }
 
-    pub fn build(&mut self) -> Result<Package, ProjectBuildError> {
+    pub fn build(&self) -> Result<Package, ProjectBuildError> {
         // Setup type resolver.
         let mut resolver: Resolver<'_> = Resolver::new();
 
         resolver.populate_project_types(&self.sources);
 
-        // Setup codegen context.
-        let pkg = &self.meta.package;
-        let mut cx = Codegen::new(
-            &pkg.name,
-            &pkg.version,
-            CString::new(pkg.name.as_str()).unwrap(),
-            resolver,
-        );
-
-        // Compile the sources.
+        // Build.
         let bin = Arch::new();
         let lib = Arch::new();
 
-        for (fqtn, src) in &self.sources {
-            cx.set_namespace(match fqtn.rfind('.') {
-                Some(i) => &fqtn[..i],
-                None => "",
-            });
-
-            for im in src.impls() {
-                for func in im.functions() {
-                    let func = match func.build(&cx, &fqtn) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            return Err(ProjectBuildError::InvalidSyntax(src.path().to_owned(), e));
-                        }
-                    };
-                }
-            }
+        for target in Self::SUPPORTED_TARGETS {
+            self.build_for(target, &resolver)?;
         }
 
         // Setup metadata.
+        let pkg = &self.meta.package;
         let meta = PackageMeta::new(pkg.name.clone(), pkg.version.clone());
 
         Ok(Package::new(meta, bin, lib))
@@ -164,6 +148,42 @@ impl Project {
             fqtn.pop();
 
             assert!(self.sources.insert(fqtn, source).is_none());
+        }
+
+        Ok(())
+    }
+
+    fn build_for(&self, target: &str, resolver: &Resolver<'_>) -> Result<(), ProjectBuildError> {
+        // Setup target.
+        let target = Target::new(CString::new(target).unwrap());
+
+        // Setup codegen context.
+        let pkg = &self.meta.package;
+        let mut cx = Codegen::new(
+            &pkg.name,
+            &pkg.version,
+            target,
+            CString::new(pkg.name.as_str()).unwrap(),
+            resolver,
+        );
+
+        // Compile the sources.
+        for (fqtn, src) in &self.sources {
+            cx.set_namespace(match fqtn.rfind('.') {
+                Some(i) => &fqtn[..i],
+                None => "",
+            });
+
+            for im in src.impls() {
+                for func in im.functions() {
+                    let func = match func.build(&cx, &fqtn) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            return Err(ProjectBuildError::InvalidSyntax(src.path().to_owned(), e));
+                        }
+                    };
+                }
+            }
         }
 
         Ok(())
