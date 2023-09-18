@@ -4,8 +4,10 @@ use crate::ast::{ParseError, SourceFile};
 use crate::codegen::{Codegen, Resolver, Target};
 use crate::lexer::SyntaxError;
 use crate::pkg::{Arch, Package, PackageMeta};
+use llvm_sys::core::LLVMDisposeMessage;
+use llvm_sys::target_machine::LLVMGetDefaultTargetTriple;
 use std::collections::{BTreeMap, VecDeque};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -100,13 +102,23 @@ impl Project {
 
         resolver.populate_project_types(&self.sources);
 
+        // Get host target.
+        let target = unsafe {
+            let ptr = LLVMGetDefaultTargetTriple();
+            let str = CStr::from_ptr(ptr).to_str().unwrap().to_owned();
+            LLVMDisposeMessage(ptr);
+            str
+        };
+
+        if !Self::SUPPORTED_TARGETS.iter().any(|&v| v == target) {
+            todo!("cross-compilation");
+        }
+
         // Build.
         let bin = Arch::new();
         let lib = Arch::new();
 
-        for target in Self::SUPPORTED_TARGETS {
-            self.build_for(target, &resolver)?;
-        }
+        self.build_for(&target, &resolver)?;
 
         // Setup metadata.
         let pkg = &self.meta.package;
