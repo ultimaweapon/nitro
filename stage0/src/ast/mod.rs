@@ -412,7 +412,7 @@ impl SourceFile {
 
         if let Some(i) = repr {
             let repr = match attrs.remove(i) {
-                Attribute::Repr(n, r) => r,
+                Attribute::Repr(_, r) => r,
                 _ => unreachable!(),
             };
 
@@ -847,7 +847,6 @@ impl SourceFile {
 
                     exprs.push(Expression::Value(ident));
                     exprs.push(Expression::NotEqual(ex, eq));
-
                     continue;
                 }
                 Token::Equals(eq1) => {
@@ -855,14 +854,13 @@ impl SourceFile {
 
                     exprs.push(Expression::Value(ident));
                     exprs.push(Expression::Equal(eq1, eq2));
-
                     continue;
                 }
                 Token::OpenParenthesis(_) => {
                     let args = Self::parse_args(lex)?;
+                    let name = Path::new(vec![Token::Identifier(ident)]);
 
-                    exprs.push(Expression::Call(Call::new(Vec::new(), ident, args)));
-
+                    exprs.push(Expression::Call(Call::new(name, args)));
                     continue;
                 }
                 _ => {

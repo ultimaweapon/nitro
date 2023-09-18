@@ -3,10 +3,12 @@ pub use self::resolver::*;
 pub use self::target::*;
 pub use self::ty::*;
 
-use crate::ast::{Path, Representation, SourceFile, Struct, TypeDefinition, Use};
+use crate::ast::{Expression, Path, Representation, SourceFile, Struct, TypeDefinition, Use};
+use crate::lexer::SyntaxError;
 use crate::pkg::PackageVersion;
 use llvm_sys::core::{
-    LLVMContextCreate, LLVMContextDispose, LLVMDisposeModule, LLVMModuleCreateWithNameInContext,
+    LLVMContextCreate, LLVMContextDispose, LLVMDisposeMessage, LLVMDisposeModule,
+    LLVMModuleCreateWithNameInContext,
 };
 use llvm_sys::prelude::{LLVMContextRef, LLVMModuleRef};
 use llvm_sys::target::{
@@ -14,7 +16,8 @@ use llvm_sys::target::{
 };
 use llvm_sys::target_machine::{
     LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetDataLayout, LLVMCreateTargetMachine,
-    LLVMDisposeTargetMachine, LLVMGetTargetFromTriple, LLVMRelocMode, LLVMTargetMachineRef,
+    LLVMDisposeTargetMachine, LLVMGetTargetFromTriple, LLVMGetTargetMachineTriple, LLVMRelocMode,
+    LLVMTargetMachineRef,
 };
 use std::ffi::CStr;
 use std::ptr::{null, null_mut};
@@ -103,9 +106,88 @@ impl<'a> Codegen<'a> {
         self.namespace = v;
     }
 
+    pub fn triple(&self) -> String {
+        unsafe {
+            let ptr = LLVMGetTargetMachineTriple(self.target);
+            let triple = CStr::from_ptr(ptr).to_str().unwrap().to_owned();
+            LLVMDisposeMessage(ptr);
+            triple
+        }
+    }
+
     /// Returns the pointer size, in bytes.
     pub fn pointer_size(&self) -> u32 {
         unsafe { LLVMPointerSize(self.layout) }
+    }
+
+    pub fn run_cfg(&self, expr: &[Expression]) -> Result<bool, SyntaxError> {
+        // Get first expression.
+        let mut expr = expr.iter();
+        let lhs = match expr.next().unwrap() {
+            Expression::Value(v) => v,
+            e => return Err(SyntaxError::new(e.span(), "expect an identifier")),
+        };
+
+        // Get second expression.
+        let triple = self.triple();
+        let os = triple.split('-').nth(2).unwrap();
+        let (equal, span) = match expr.next() {
+            Some(Expression::NotEqual(f, s)) => (false, f.span() + s.span()),
+            Some(Expression::Equal(f, s)) => (true, f.span() + s.span()),
+            Some(e) => return Err(SyntaxError::new(e.span(), "unsupported expression")),
+            None => match lhs.value() {
+                "unix" => match os {
+                    "darwin" | "linux" => return Ok(true),
+                    "win32" => return Ok(false),
+                    _ => todo!(),
+                },
+                "win32" => match os {
+                    "darwin" | "linux" => return Ok(false),
+                    "win32" => return Ok(true),
+                    _ => todo!(),
+                },
+                _ => return Err(SyntaxError::new(lhs.span().clone(), "unknown argument")),
+            },
+        };
+
+        // Check if first expression is "os".
+        if lhs.value() != "os" {
+            return Err(SyntaxError::new(lhs.span().clone(), "unknown expression"));
+        }
+
+        // Get third argument.
+        let rhs = match expr.next() {
+            Some(Expression::String(v)) => v,
+            Some(t) => return Err(SyntaxError::new(t.span(), "expect a string literal")),
+            None => return Err(SyntaxError::new(span, "expect a string literal after this")),
+        };
+
+        // Compare.
+        let res = if equal {
+            match rhs.value() {
+                "windows" => match os {
+                    "darwin" | "linux" => false,
+                    "win32" => true,
+                    _ => todo!(),
+                },
+                _ => todo!(),
+            }
+        } else {
+            match rhs.value() {
+                "windows" => match os {
+                    "darwin" | "linux" => true,
+                    "win32" => false,
+                    _ => todo!(),
+                },
+                _ => todo!(),
+            }
+        };
+
+        if expr.next().is_some() {
+            todo!()
+        }
+
+        Ok(res)
     }
 
     pub fn encode_name(&self, container: &str, name: &str) -> String {

@@ -1,6 +1,6 @@
-use super::Statement;
+use super::{Path, Statement};
 use crate::lexer::{
-    AsmKeyword, Equals, ExclamationMark, Identifier, IfKeyword, NullKeyword, StringLiteral,
+    AsmKeyword, Equals, ExclamationMark, Identifier, IfKeyword, NullKeyword, Span, StringLiteral,
     UnsignedLiteral,
 };
 
@@ -17,16 +17,35 @@ pub enum Expression {
     If(If),
 }
 
+impl Expression {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Value(v) => v.span().clone(),
+            Self::Call(v) => v.span(),
+            Self::Equal(f, s) => f.span() + s.span(),
+            Self::NotEqual(f, s) => f.span() + s.span(),
+            Self::Unsigned(v) => v.span().clone(),
+            Self::String(v) => v.span().clone(),
+            Self::Null(v) => v.span().clone(),
+            Self::Asm(v) => v.span().clone(),
+            Self::If(v) => v.span().clone(),
+        }
+    }
+}
+
 /// A function call.
 pub struct Call {
-    path: Vec<Identifier>,
-    name: Identifier,
+    name: Path,
     args: Vec<Vec<Expression>>,
 }
 
 impl Call {
-    pub fn new(path: Vec<Identifier>, name: Identifier, args: Vec<Vec<Expression>>) -> Self {
-        Self { path, name, args }
+    pub fn new(name: Path, args: Vec<Vec<Expression>>) -> Self {
+        Self { name, args }
+    }
+
+    pub fn span(&self) -> Span {
+        self.name.span()
     }
 }
 
@@ -52,6 +71,10 @@ impl Asm {
             outputs,
         }
     }
+
+    pub fn span(&self) -> &Span {
+        self.def.span()
+    }
 }
 
 /// An input of the inline assembly (e.g. `in("rax")`).
@@ -74,5 +97,9 @@ pub struct If {
 impl If {
     pub fn new(def: IfKeyword, cond: Vec<Expression>, body: Vec<Statement>) -> Self {
         Self { def, cond, body }
+    }
+
+    pub fn span(&self) -> &Span {
+        self.def.span()
     }
 }

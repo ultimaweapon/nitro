@@ -311,6 +311,10 @@ impl Equals {
     pub fn new(span: Span) -> Self {
         Self(span)
     }
+
+    pub fn span(&self) -> &Span {
+        &self.0
+    }
 }
 
 impl Display for Equals {
@@ -508,6 +512,10 @@ impl UnsignedLiteral {
     pub fn new(span: Span, value: u64) -> Self {
         Self { span, value }
     }
+
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 impl Display for UnsignedLiteral {
@@ -543,6 +551,14 @@ pub struct StringLiteral {
 impl StringLiteral {
     pub fn new(span: Span, value: String) -> Self {
         Self { span, value }
+    }
+
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
+
+    pub fn value(&self) -> &str {
+        self.value.as_ref()
     }
 }
 
@@ -682,6 +698,10 @@ impl IfKeyword {
     pub fn new(span: Span) -> Self {
         Self(span)
     }
+
+    pub fn span(&self) -> &Span {
+        &self.0
+    }
 }
 
 impl Display for IfKeyword {
@@ -712,6 +732,10 @@ impl AsmKeyword {
     pub fn new(span: Span) -> Self {
         Self(span)
     }
+
+    pub fn span(&self) -> &Span {
+        &self.0
+    }
 }
 
 impl Display for AsmKeyword {
@@ -726,6 +750,10 @@ pub struct NullKeyword(Span);
 impl NullKeyword {
     pub fn new(span: Span) -> Self {
         Self(span)
+    }
+
+    pub fn span(&self) -> &Span {
+        &self.0
     }
 }
 

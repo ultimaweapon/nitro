@@ -36,7 +36,19 @@ impl Function {
         &self,
         cx: &'a Codegen<'b>,
         container: &str,
-    ) -> Result<LlvmFunc<'a, 'b>, SyntaxError> {
+    ) -> Result<Option<LlvmFunc<'a, 'b>>, SyntaxError> {
+        // Check cfg attribute.
+        let cfg = self.attrs.iter().find_map(|a| match a {
+            Attribute::Cfg(_, c) => Some(c),
+            _ => None,
+        });
+
+        if let Some(cfg) = cfg {
+            if !cx.run_cfg(cfg)? {
+                return Ok(None);
+            }
+        }
+
         // Check if function already exists.
         let name = CString::new(cx.encode_name(container, self.name.value())).unwrap();
 
@@ -81,7 +93,7 @@ impl Function {
         let func = LlvmFunc::new(cx, name, &params, ret);
 
         // TODO: Build function body.
-        Ok(func)
+        Ok(Some(func))
     }
 }
 

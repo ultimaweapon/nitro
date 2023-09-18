@@ -7,7 +7,7 @@ impl Allocator {
         @cfg(unix)
         let ptr = aligned_alloc(align, size);
 
-        @cfg(windows)
+        @cfg(win32)
         let ptr = _aligned_malloc(size, align);
 
         if ptr == null {
@@ -26,7 +26,7 @@ impl Allocator {
         @cfg(unix)
         free(ptr);
 
-        @cfg(windows)
+        @cfg(win32)
         _aligned_free(ptr);
     }
 
@@ -38,11 +38,11 @@ impl Allocator {
     @ext(C)
     fn free(ptr: *UInt8);
 
-    @cfg(windows)
+    @cfg(win32)
     @ext(C)
     fn _aligned_malloc(size: UInt, align: UInt): *UInt8;
 
-    @cfg(windows)
+    @cfg(win32)
     @ext(C)
     fn _aligned_free(ptr: *UInt8);
 
