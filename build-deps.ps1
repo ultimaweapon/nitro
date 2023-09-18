@@ -7,6 +7,7 @@ cmake `
     -DLLVM_ENABLE_ZSTD:BOOL=OFF `
     -DLLVM_APPEND_VC_REV:BOOL=OFF `
     -DLLVM_TARGETS_TO_BUILD:STRING="AArch64;X86" `
+    -DLLVM_ENABLE_PROJECTS:STRING="lld" `
     "$PSScriptRoot/deps/llvm/llvm"
 
 if ($LASTEXITCODE -ne 0) {
