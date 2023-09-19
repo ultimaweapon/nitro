@@ -1,8 +1,11 @@
-use super::{Codegen, LlvmType};
-use llvm_sys::core::{LLVMAddFunction, LLVMFunctionType, LLVMGetNamedFunction};
+use super::{BasicBlock, Codegen, LlvmType};
+use llvm_sys::core::{
+    LLVMAddFunction, LLVMAppendExistingBasicBlock, LLVMFunctionType, LLVMGetNamedFunction,
+};
 use llvm_sys::prelude::{LLVMTypeRef, LLVMValueRef};
 use std::ffi::CStr;
 use std::marker::PhantomData;
+use std::mem::forget;
 
 /// A function.
 pub struct LlvmFunc<'a, 'b: 'a> {
@@ -46,5 +49,10 @@ impl<'a, 'b: 'a> LlvmFunc<'a, 'b> {
             value: unsafe { LLVMAddFunction(cx.module, name.as_ptr(), ty) },
             phantom: PhantomData,
         }
+    }
+
+    pub fn append(&mut self, block: BasicBlock<'a, 'b>) {
+        unsafe { LLVMAppendExistingBasicBlock(self.value, block.as_raw()) };
+        forget(block);
     }
 }

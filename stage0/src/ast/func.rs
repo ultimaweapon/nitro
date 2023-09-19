@@ -1,12 +1,12 @@
-use super::{Attributes, Statement, Type};
-use crate::codegen::{Codegen, LlvmFunc, LlvmType, LlvmVoid};
-use crate::lexer::{FnKeyword, Identifier, SyntaxError};
+use super::{Attributes, Extern, Statement, Type};
+use crate::codegen::{BasicBlock, Builder, Codegen, LlvmFunc, LlvmType, LlvmVoid};
+use crate::lexer::{Identifier, SyntaxError};
+use std::borrow::Cow;
 use std::ffi::CString;
 
 /// A function.
 pub struct Function {
     attrs: Attributes,
-    def: FnKeyword,
     name: Identifier,
     params: Vec<FunctionParam>,
     ret: Option<Type>,
@@ -16,7 +16,6 @@ pub struct Function {
 impl Function {
     pub fn new(
         attrs: Attributes,
-        def: FnKeyword,
         name: Identifier,
         params: Vec<FunctionParam>,
         ret: Option<Type>,
@@ -24,7 +23,6 @@ impl Function {
     ) -> Self {
         Self {
             attrs,
-            def,
             name,
             params,
             ret,
@@ -44,8 +42,14 @@ impl Function {
             }
         }
 
+        // Build function name.
+        let name = match self.attrs.ext() {
+            Some((_, Extern::C)) => Cow::Borrowed(self.name.value()),
+            None => Cow::Owned(cx.encode_name(container, self.name.value())),
+        };
+
         // Check if function already exists.
-        let name = CString::new(cx.encode_name(container, self.name.value())).unwrap();
+        let name = CString::new(name.as_ref()).unwrap();
 
         if LlvmFunc::get(cx, &name).is_some() {
             return Err(SyntaxError::new(
@@ -85,10 +89,34 @@ impl Function {
         };
 
         // Create a function.
-        let func = LlvmFunc::new(cx, name, &params, ret);
+        let mut func = LlvmFunc::new(cx, name, &params, ret);
 
-        // TODO: Build function body.
+        match &self.body {
+            Some(v) => Self::build_body(cx, &mut func, v),
+            None => {
+                if self.attrs.ext().is_none() {
+                    return Err(SyntaxError::new(
+                        self.name.span().clone(),
+                        "a body is required for non-extern or non-abstract",
+                    ));
+                }
+            }
+        }
+
         Ok(Some(func))
+    }
+
+    fn build_body<'a, 'b: 'a>(
+        cx: &'a Codegen<'b>,
+        func: &mut LlvmFunc<'a, 'b>,
+        stmts: &[Statement],
+    ) {
+        let mut bb = BasicBlock::new(cx);
+        let mut b = Builder::new(cx, &mut bb);
+
+        b.ret_void();
+
+        func.append(bb);
     }
 }
 

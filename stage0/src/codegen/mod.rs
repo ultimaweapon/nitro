@@ -1,3 +1,5 @@
+pub use self::block::*;
+pub use self::builder::*;
 pub use self::func::*;
 pub use self::resolver::*;
 pub use self::target::*;
@@ -22,6 +24,8 @@ use llvm_sys::target_machine::{
 use std::ffi::CStr;
 use std::ptr::{null, null_mut};
 
+mod block;
+mod builder;
 mod func;
 mod resolver;
 mod target;

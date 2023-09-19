@@ -10,8 +10,7 @@ pub use self::ty::*;
 pub use self::using::*;
 
 use crate::lexer::{
-    ClassKeyword, FnKeyword, Identifier, ImplKeyword, Lexer, StructKeyword, SyntaxError, Token,
-    UseKeyword,
+    ClassKeyword, Identifier, ImplKeyword, Lexer, StructKeyword, SyntaxError, Token, UseKeyword,
 };
 use std::path::PathBuf;
 use thiserror::Error;
@@ -342,8 +341,8 @@ impl SourceFile {
 
             match tok {
                 Token::AttributeName(name) => attrs = Some(Attributes::parse(lex, name)?),
-                Token::FnKeyword(def) => {
-                    functions.push(Self::parse_fn(lex, attrs.take().unwrap_or_default(), def)?);
+                Token::FnKeyword(_) => {
+                    functions.push(Self::parse_fn(lex, attrs.take().unwrap_or_default())?);
                 }
                 Token::CloseCurly(_) => break,
                 t => return Err(SyntaxError::new(t.span().clone(), "syntax error")),
@@ -353,11 +352,7 @@ impl SourceFile {
         Ok(TypeImpl::new(def, ty, functions))
     }
 
-    fn parse_fn(
-        lex: &mut Lexer,
-        attrs: Attributes,
-        def: FnKeyword,
-    ) -> Result<Function, SyntaxError> {
+    fn parse_fn(lex: &mut Lexer, attrs: Attributes) -> Result<Function, SyntaxError> {
         let name = lex.next_ident()?;
 
         // Parse parameters.
@@ -416,7 +411,7 @@ impl SourceFile {
         };
 
         let ret = match next {
-            Token::Semicolon(_) => return Ok(Function::new(attrs, def, name, params, None, None)),
+            Token::Semicolon(_) => return Ok(Function::new(attrs, name, params, None, None)),
             Token::OpenCurly(_) => None,
             Token::Colon(_) => {
                 let ret = Self::parse_type(lex)?;
@@ -432,7 +427,7 @@ impl SourceFile {
 
                 match next {
                     Token::Semicolon(_) => {
-                        return Ok(Function::new(attrs, def, name, params, Some(ret), None));
+                        return Ok(Function::new(attrs, name, params, Some(ret), None));
                     }
                     Token::OpenCurly(_) => {}
                     t => {
@@ -456,7 +451,7 @@ impl SourceFile {
         // Parse body.
         let body = Statement::parse_block(lex)?;
 
-        Ok(Function::new(attrs, def, name, params, ret, Some(body)))
+        Ok(Function::new(attrs, name, params, ret, Some(body)))
     }
 
     fn parse_type(lex: &mut Lexer) -> Result<Type, SyntaxError> {

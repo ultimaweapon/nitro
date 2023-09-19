@@ -48,6 +48,10 @@ impl Attributes {
         self.config.as_ref()
     }
 
+    pub fn ext(&self) -> Option<&(AttributeName, Extern)> {
+        self.ext.as_ref()
+    }
+
     pub fn repr(&self) -> Option<&(AttributeName, Representation)> {
         self.repr.as_ref()
     }
