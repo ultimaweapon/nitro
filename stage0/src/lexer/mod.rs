@@ -9,7 +9,7 @@ use std::rc::Rc;
 mod span;
 mod token;
 
-/// Tokenizer for Pluto source.
+/// Tokenizer for Nitro source.
 pub struct Lexer {
     data: Rc<String>,
     next: usize,

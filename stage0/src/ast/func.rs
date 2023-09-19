@@ -1,11 +1,11 @@
-use super::{Attribute, Statement, Type};
+use super::{Attributes, Statement, Type};
 use crate::codegen::{Codegen, LlvmFunc, LlvmType, LlvmVoid};
 use crate::lexer::{FnKeyword, Identifier, SyntaxError};
 use std::ffi::CString;
 
 /// A function.
 pub struct Function {
-    attrs: Vec<Attribute>,
+    attrs: Attributes,
     def: FnKeyword,
     name: Identifier,
     params: Vec<FunctionParam>,
@@ -15,7 +15,7 @@ pub struct Function {
 
 impl Function {
     pub fn new(
-        attrs: Vec<Attribute>,
+        attrs: Attributes,
         def: FnKeyword,
         name: Identifier,
         params: Vec<FunctionParam>,
@@ -38,12 +38,7 @@ impl Function {
         container: &str,
     ) -> Result<Option<LlvmFunc<'a, 'b>>, SyntaxError> {
         // Check cfg attribute.
-        let cfg = self.attrs.iter().find_map(|a| match a {
-            Attribute::Cfg(_, c) => Some(c),
-            _ => None,
-        });
-
-        if let Some(cfg) = cfg {
+        if let Some((_, cfg)) = self.attrs.config() {
             if !cx.run_cfg(cfg)? {
                 return Ok(None);
             }

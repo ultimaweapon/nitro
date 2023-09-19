@@ -1,4 +1,4 @@
-use super::{Attribute, Representation};
+use super::{Attributes, Representation};
 use crate::lexer::{Identifier, Span, StructKeyword};
 
 /// A struct.
@@ -8,8 +8,8 @@ use crate::lexer::{Identifier, Span, StructKeyword};
 ///
 /// Struct type cannot be a generic type and does not supports inheritance.
 pub enum Struct {
-    Primitive(Vec<Attribute>, Representation, StructKeyword, Identifier),
-    Composite(Vec<Attribute>, StructKeyword, Identifier),
+    Primitive(Attributes, Representation, StructKeyword, Identifier),
+    Composite(Attributes, StructKeyword, Identifier),
 }
 
 impl Struct {

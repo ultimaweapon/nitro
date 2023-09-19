@@ -3,7 +3,6 @@ pub use self::class::*;
 pub use self::expr::*;
 pub use self::func::*;
 pub use self::imp::*;
-pub use self::node::*;
 pub use self::path::*;
 pub use self::stmt::*;
 pub use self::struc::*;
@@ -11,8 +10,8 @@ pub use self::ty::*;
 pub use self::using::*;
 
 use crate::lexer::{
-    AsmKeyword, AttributeName, ClassKeyword, FnKeyword, Identifier, IfKeyword, ImplKeyword,
-    LetKeyword, Lexer, StructKeyword, SyntaxError, Token, UseKeyword,
+    ClassKeyword, FnKeyword, Identifier, ImplKeyword, Lexer, StructKeyword, SyntaxError, Token,
+    UseKeyword,
 };
 use std::path::PathBuf;
 use thiserror::Error;
@@ -22,7 +21,6 @@ mod class;
 mod expr;
 mod func;
 mod imp;
-mod node;
 mod path;
 mod stmt;
 mod struc;
@@ -86,7 +84,7 @@ impl SourceFile {
 
             // Check token.
             match tok {
-                Token::AttributeName(name) => attrs = Some(Self::parse_attrs(&mut lex, name)?),
+                Token::AttributeName(name) => attrs = Some(Attributes::parse(&mut lex, name)?),
                 Token::UseKeyword(def) => self.uses.push(Self::parse_use(&mut lex, def)?),
                 Token::StructKeyword(def) => {
                     let name = lex.next_ident()?;
@@ -154,163 +152,6 @@ impl SourceFile {
         }
 
         Ok(())
-    }
-
-    fn parse_attrs(lex: &mut Lexer, first: AttributeName) -> Result<Vec<Attribute>, SyntaxError> {
-        // Parse the first attribute.
-        let mut attrs: Vec<Attribute> = Vec::new();
-
-        attrs.push(Self::parse_attr(lex, first)?);
-
-        // Parse the remaining if available.
-        loop {
-            let tok = match lex.next()? {
-                Some(v) => v,
-                None => {
-                    return Err(SyntaxError::new(
-                        lex.last().unwrap().clone(),
-                        "expected an item after this",
-                    ));
-                }
-            };
-
-            match tok {
-                Token::AttributeName(name) => attrs.push(Self::parse_attr(lex, name)?),
-                _ => {
-                    lex.undo();
-                    break;
-                }
-            }
-        }
-
-        // Check for multiple built-in attributes.
-        let mut vis = false;
-        let mut cfg = false;
-        let mut ext = false;
-        let mut repr = false;
-
-        for a in &attrs {
-            match a {
-                Attribute::Pub(n) => {
-                    if vis {
-                        return Err(SyntaxError::new(
-                            n.span().clone(),
-                            "multiple pub attribute is not allowed",
-                        ));
-                    } else {
-                        vis = true;
-                    }
-                }
-                Attribute::Cfg(n, _) => {
-                    if cfg {
-                        return Err(SyntaxError::new(
-                            n.span().clone(),
-                            "multiple cfg attribute is not allowed",
-                        ));
-                    } else {
-                        cfg = true;
-                    }
-                }
-                Attribute::Ext(n, _) => {
-                    if ext {
-                        return Err(SyntaxError::new(
-                            n.span().clone(),
-                            "multiple ext attribute is not allowed",
-                        ));
-                    } else {
-                        ext = true;
-                    }
-                }
-                Attribute::Repr(n, _) => {
-                    if repr {
-                        return Err(SyntaxError::new(
-                            n.span().clone(),
-                            "multiple repr attribute is not allowed",
-                        ));
-                    } else {
-                        repr = true;
-                    }
-                }
-                Attribute::Custom(_, _) => {}
-            }
-        }
-
-        Ok(attrs)
-    }
-
-    fn parse_attr(lex: &mut Lexer, name: AttributeName) -> Result<Attribute, SyntaxError> {
-        let attr = match name.value() {
-            "cfg" => {
-                lex.next_op()?;
-                let arg = Self::parse_exprs(lex)?;
-                lex.next_cp()?;
-
-                Attribute::Cfg(name, arg)
-            }
-            "ext" => {
-                lex.next_op()?;
-                let ext = lex.next_ident()?;
-                lex.next_cp()?;
-
-                Attribute::Ext(
-                    name,
-                    match ext.value() {
-                        "C" => Extern::C,
-                        _ => return Err(SyntaxError::new(ext.span().clone(), "unknown extern")),
-                    },
-                )
-            }
-            "pub" => match lex.next()? {
-                Some(Token::OpenParenthesis(_)) => match lex.next()? {
-                    Some(Token::CloseParenthesis(_)) => Attribute::Pub(name),
-                    _ => {
-                        return Err(SyntaxError::new(
-                            name.span().clone(),
-                            "expect zero argument for this attribute",
-                        ));
-                    }
-                },
-                Some(_) => {
-                    lex.undo();
-                    Attribute::Pub(name)
-                }
-                None => Attribute::Pub(name),
-            },
-            "repr" => {
-                lex.next_op()?;
-                let repr = lex.next_ident()?;
-                lex.next_cp()?;
-
-                Attribute::Repr(
-                    name,
-                    match repr.value() {
-                        "u8" => Representation::U8,
-                        "un" => Representation::Un,
-                        _ => {
-                            return Err(SyntaxError::new(
-                                repr.span().clone(),
-                                "unknown representation",
-                            ));
-                        }
-                    },
-                )
-            }
-            _ => Attribute::Custom(
-                name,
-                match lex.next()? {
-                    Some(Token::OpenParenthesis(_)) => Some(Self::parse_args(lex)?),
-                    Some(Token::CloseParenthesis(v)) => {
-                        return Err(SyntaxError::new(v.span().clone(), "expect '('"));
-                    }
-                    _ => {
-                        lex.undo();
-                        None
-                    }
-                },
-            ),
-        };
-
-        Ok(attr)
     }
 
     fn parse_use(lex: &mut Lexer, def: UseKeyword) -> Result<Use, SyntaxError> {
@@ -396,28 +237,14 @@ impl SourceFile {
 
     fn parse_struct(
         lex: &mut Lexer,
-        mut attrs: Vec<Attribute>,
+        attrs: Attributes,
         def: StructKeyword,
         name: Identifier,
     ) -> Result<Struct, SyntaxError> {
         // Check if a primitive struct.
-        let mut repr = None;
-
-        for (i, a) in attrs.iter().enumerate() {
-            if let Attribute::Repr(_, _) = a {
-                repr = Some(i);
-                break;
-            }
-        }
-
-        if let Some(i) = repr {
-            let repr = match attrs.remove(i) {
-                Attribute::Repr(_, r) => r,
-                _ => unreachable!(),
-            };
-
+        if let Some((_, repr)) = attrs.repr() {
+            let repr = *repr;
             lex.next_semicolon()?;
-
             return Ok(Struct::Primitive(attrs, repr, def, name));
         }
 
@@ -446,7 +273,7 @@ impl SourceFile {
 
     fn parse_class(
         lex: &mut Lexer,
-        attrs: Vec<Attribute>,
+        attrs: Attributes,
         def: ClassKeyword,
         name: Identifier,
     ) -> Result<Class, SyntaxError> {
@@ -514,7 +341,7 @@ impl SourceFile {
             };
 
             match tok {
-                Token::AttributeName(name) => attrs = Some(Self::parse_attrs(lex, name)?),
+                Token::AttributeName(name) => attrs = Some(Attributes::parse(lex, name)?),
                 Token::FnKeyword(def) => {
                     functions.push(Self::parse_fn(lex, attrs.take().unwrap_or_default(), def)?);
                 }
@@ -528,7 +355,7 @@ impl SourceFile {
 
     fn parse_fn(
         lex: &mut Lexer,
-        attrs: Vec<Attribute>,
+        attrs: Attributes,
         def: FnKeyword,
     ) -> Result<Function, SyntaxError> {
         let name = lex.next_ident()?;
@@ -627,386 +454,9 @@ impl SourceFile {
         };
 
         // Parse body.
-        let body = Self::parse_block(lex)?;
+        let body = Statement::parse_block(lex)?;
 
         Ok(Function::new(attrs, def, name, params, ret, Some(body)))
-    }
-
-    fn parse_stmt(lex: &mut Lexer) -> Result<Option<Statement>, SyntaxError> {
-        // Check for attribute.
-        let next = match lex.next()? {
-            Some(v) => v,
-            None => {
-                return Err(SyntaxError::new(
-                    lex.last().unwrap().clone(),
-                    "expect an '}' after this",
-                ));
-            }
-        };
-
-        let attrs = match next {
-            Token::AttributeName(name) => {
-                let attrs = Self::parse_attrs(lex, name)?;
-                let next = match lex.next()? {
-                    Some(v) => v,
-                    None => {
-                        return Err(SyntaxError::new(
-                            lex.last().unwrap().clone(),
-                            "expect a statement after this",
-                        ));
-                    }
-                };
-
-                match next {
-                    Token::CloseCurly(v) => {
-                        return Err(SyntaxError::new(v.span().clone(), "expect a statement"));
-                    }
-                    _ => lex.undo(),
-                }
-
-                attrs
-            }
-            _ => {
-                lex.undo();
-                Vec::new()
-            }
-        };
-
-        // Parse statement.
-        let next = match lex.next()? {
-            Some(v) => v,
-            None => {
-                return Err(SyntaxError::new(
-                    lex.last().unwrap().clone(),
-                    "expect an '}' after this",
-                ));
-            }
-        };
-
-        let stmt = match next {
-            Token::LetKeyword(v) => Statement::Let(Self::parse_let(lex, attrs, v)?),
-            Token::CloseCurly(_) => return Ok(None),
-            _ => {
-                lex.undo();
-
-                let exprs = Self::parse_exprs(lex)?;
-                let next = match lex.next()? {
-                    Some(v) => v,
-                    None => {
-                        return Err(SyntaxError::new(
-                            lex.last().unwrap().clone(),
-                            "expect an '}' after this",
-                        ));
-                    }
-                };
-
-                match next {
-                    Token::Semicolon(_) => Statement::Unit(exprs),
-                    Token::CloseCurly(_) => {
-                        lex.undo();
-                        Statement::Value(exprs)
-                    }
-                    t => return Err(SyntaxError::new(t.span().clone(), "expect ';'")),
-                }
-            }
-        };
-
-        Ok(Some(stmt))
-    }
-
-    fn parse_args(lex: &mut Lexer) -> Result<Vec<Vec<Expression>>, SyntaxError> {
-        let mut args = Vec::new();
-
-        loop {
-            // Check for ')'.
-            match lex.next()? {
-                Some(Token::CloseParenthesis(_)) => break,
-                Some(_) => lex.undo(),
-                None => {
-                    return Err(SyntaxError::new(
-                        lex.last().unwrap().clone(),
-                        "expect ')' after this",
-                    ));
-                }
-            }
-
-            // Parse expression.
-            args.push(Self::parse_exprs(lex)?);
-
-            // Check for ','.
-            let next = match lex.next()? {
-                Some(v) => v,
-                None => {
-                    return Err(SyntaxError::new(
-                        lex.last().unwrap().clone(),
-                        "expect ')' after this",
-                    ));
-                }
-            };
-
-            match next {
-                Token::Comma(_) => continue,
-                Token::CloseParenthesis(_) => break,
-                t => return Err(SyntaxError::new(t.span().clone(), "syntax error")),
-            }
-        }
-
-        Ok(args)
-    }
-
-    fn parse_let(
-        lex: &mut Lexer,
-        attrs: Vec<Attribute>,
-        def: LetKeyword,
-    ) -> Result<Let, SyntaxError> {
-        let var = lex.next_ident()?;
-        lex.next_equals()?;
-
-        let exprs = Self::parse_exprs(lex)?;
-        lex.next_semicolon()?;
-
-        Ok(Let::new(attrs, def, var, exprs))
-    }
-
-    fn parse_if(lex: &mut Lexer, def: IfKeyword) -> Result<If, SyntaxError> {
-        // Parse condition.
-        let exprs = Self::parse_exprs(lex)?;
-        lex.next_oc()?;
-
-        // Parse the body.
-        let body = Self::parse_block(lex)?;
-
-        Ok(If::new(def, exprs, body))
-    }
-
-    fn parse_block(lex: &mut Lexer) -> Result<Vec<Statement>, SyntaxError> {
-        let mut block = Vec::new();
-
-        while let Some(stmt) = Self::parse_stmt(lex)? {
-            block.push(stmt);
-        }
-
-        Ok(block)
-    }
-
-    fn parse_exprs(lex: &mut Lexer) -> Result<Vec<Expression>, SyntaxError> {
-        let mut exprs = Vec::new();
-
-        loop {
-            // Check the first item.
-            let next = match lex.next()? {
-                Some(v) => v,
-                None => {
-                    return Err(SyntaxError::new(
-                        lex.last().unwrap().clone(),
-                        "expect an expression after this",
-                    ));
-                }
-            };
-
-            let ident = match next {
-                Token::Identifier(v) => v,
-                Token::UnsignedLiteral(v) => {
-                    exprs.push(Expression::Unsigned(v));
-                    continue;
-                }
-                Token::StringLiteral(v) => {
-                    exprs.push(Expression::String(v));
-                    continue;
-                }
-                Token::NullKeyword(v) => {
-                    exprs.push(Expression::Null(v));
-                    break;
-                }
-                Token::AsmKeyword(v) => {
-                    exprs.push(Expression::Asm(Self::parse_asm(lex, v)?));
-                    continue;
-                }
-                Token::IfKeyword(v) => {
-                    exprs.push(Expression::If(Self::parse_if(lex, v)?));
-                    continue;
-                }
-                _ => {
-                    lex.undo();
-                    break;
-                }
-            };
-
-            // Check the token after the identifier.
-            let second = match lex.next()? {
-                Some(v) => v,
-                None => {
-                    exprs.push(Expression::Value(ident));
-                    break;
-                }
-            };
-
-            match second {
-                Token::ExclamationMark(ex) => {
-                    let eq = lex.next_equals()?;
-
-                    exprs.push(Expression::Value(ident));
-                    exprs.push(Expression::NotEqual(ex, eq));
-                    continue;
-                }
-                Token::Equals(eq1) => {
-                    let eq2 = lex.next_equals()?;
-
-                    exprs.push(Expression::Value(ident));
-                    exprs.push(Expression::Equal(eq1, eq2));
-                    continue;
-                }
-                Token::OpenParenthesis(_) => {
-                    let args = Self::parse_args(lex)?;
-                    let name = Path::new(vec![Token::Identifier(ident)]);
-
-                    exprs.push(Expression::Call(Call::new(name, args)));
-                    continue;
-                }
-                _ => {
-                    lex.undo();
-                    exprs.push(Expression::Value(ident));
-                    break;
-                }
-            }
-        }
-
-        Ok(exprs)
-    }
-
-    fn parse_asm(lex: &mut Lexer, def: AsmKeyword) -> Result<Asm, SyntaxError> {
-        lex.next_op()?;
-
-        // Get the instruction.
-        let next = match lex.next()? {
-            Some(v) => v,
-            None => {
-                return Err(SyntaxError::new(
-                    lex.last().unwrap().clone(),
-                    "expect an instruction after this",
-                ));
-            }
-        };
-
-        let inst = match next {
-            Token::StringLiteral(v) => v,
-            t => return Err(SyntaxError::new(t.span().clone(), "expect an instruction")),
-        };
-
-        // Parse the arguments.
-        let mut inputs = Vec::new();
-        let mut outputs = Vec::new();
-
-        match lex.next()? {
-            Some(Token::Comma(_)) => loop {
-                let next = match lex.next()? {
-                    Some(v) => v,
-                    None => {
-                        return Err(SyntaxError::new(
-                            lex.last().unwrap().clone(),
-                            "expect ')' after this",
-                        ));
-                    }
-                };
-
-                match next {
-                    Token::Identifier(v) => {
-                        match v.value() {
-                            "in" => inputs.push(Self::parse_asm_in(lex)?),
-                            "out" => outputs.push(Self::parse_asm_out(lex)?),
-                            _ => {
-                                return Err(SyntaxError::new(v.span().clone(), "unknown argument"));
-                            }
-                        }
-
-                        // Check for comma.
-                        let next = match lex.next()? {
-                            Some(v) => v,
-                            None => {
-                                return Err(SyntaxError::new(
-                                    lex.last().unwrap().clone(),
-                                    "expect ')' after this",
-                                ));
-                            }
-                        };
-
-                        match next {
-                            Token::Comma(_) => {}
-                            Token::CloseParenthesis(_) => break,
-                            t => return Err(SyntaxError::new(t.span().clone(), "expect ')'")),
-                        }
-                    }
-                    Token::CloseParenthesis(_) => break,
-                    t => return Err(SyntaxError::new(t.span().clone(), "expect ')'")),
-                }
-            },
-            Some(Token::CloseParenthesis(_)) => {}
-            Some(t) => return Err(SyntaxError::new(t.span().clone(), "expect ')'")),
-            None => {
-                return Err(SyntaxError::new(
-                    lex.last().unwrap().clone(),
-                    "expect ')' after this",
-                ));
-            }
-        }
-
-        Ok(Asm::new(def, inst, inputs, outputs))
-    }
-
-    fn parse_asm_in(lex: &mut Lexer) -> Result<(AsmIn, Vec<Expression>), SyntaxError> {
-        // Load target register.
-        lex.next_op()?;
-
-        let reg = match lex.next()? {
-            Some(v) => match v {
-                Token::StringLiteral(v) => AsmIn::Register(v),
-                t => return Err(SyntaxError::new(t.span().clone(), "invalid input")),
-            },
-            None => {
-                return Err(SyntaxError::new(
-                    lex.last().unwrap().clone(),
-                    "expect an item after this",
-                ));
-            }
-        };
-
-        // Load the value.
-        lex.next_cp()?;
-
-        Ok((reg, Self::parse_exprs(lex)?))
-    }
-
-    fn parse_asm_out(lex: &mut Lexer) -> Result<(AsmOut, Identifier), SyntaxError> {
-        // Load output register.
-        lex.next_op()?;
-
-        let reg = match lex.next()? {
-            Some(v) => match v {
-                Token::ExclamationMark(v) => AsmOut::Never(v),
-                t => return Err(SyntaxError::new(t.span().clone(), "invalid output")),
-            },
-            None => {
-                return Err(SyntaxError::new(
-                    lex.last().unwrap().clone(),
-                    "expect an item after this",
-                ));
-            }
-        };
-
-        // Load the target variable.
-        let cp = lex.next_cp()?;
-        let var = match lex.next()? {
-            Some(Token::Identifier(v)) => v,
-            Some(t) => return Err(SyntaxError::new(t.span().clone(), "expect an identifier")),
-            None => {
-                return Err(SyntaxError::new(
-                    cp.span().clone(),
-                    "expect an identifier after this",
-                ));
-            }
-        };
-
-        Ok((reg, var))
     }
 
     fn parse_type(lex: &mut Lexer) -> Result<Type, SyntaxError> {
