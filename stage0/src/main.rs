@@ -1,7 +1,8 @@
 use crate::ast::ParseError;
-use crate::project::{Project, ProjectLoadError};
+use crate::project::{Project, ProjectBuildError, ProjectLoadError};
 use llvm_sys::target::{
-    LLVM_InitializeAllTargetInfos, LLVM_InitializeAllTargetMCs, LLVM_InitializeAllTargets,
+    LLVM_InitializeAllAsmPrinters, LLVM_InitializeAllTargetInfos, LLVM_InitializeAllTargetMCs,
+    LLVM_InitializeAllTargets,
 };
 use std::error::Error;
 use std::fmt::Write;
@@ -20,6 +21,7 @@ fn main() -> ExitCode {
         LLVM_InitializeAllTargetInfos();
         LLVM_InitializeAllTargets();
         LLVM_InitializeAllTargetMCs();
+        LLVM_InitializeAllAsmPrinters();
     }
 
     // Get binary name.
@@ -75,12 +77,16 @@ fn main() -> ExitCode {
     // Build the project.
     let pkg = match project.build() {
         Ok(v) => v,
-        Err(e) => {
-            eprintln!(
-                "Cannot build {}: {}.",
-                project.path().display(),
-                join_nested(&e)
-            );
+        Err(ProjectBuildError::InvalidSyntax(p, e)) => {
+            eprintln!("{}: {}", p.display(), e);
+            return ExitCode::FAILURE;
+        }
+        Err(ProjectBuildError::CreateDirectoryFailed(p, e)) => {
+            eprintln!("Cannot create {}: {}.", p.display(), e);
+            return ExitCode::FAILURE;
+        }
+        Err(ProjectBuildError::BuildFailed(p, e)) => {
+            eprintln!("Cannot build {}: {}", p.display(), e);
             return ExitCode::FAILURE;
         }
     };

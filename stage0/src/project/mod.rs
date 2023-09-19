@@ -1,13 +1,14 @@
 pub use self::meta::*;
 
 use crate::ast::{ParseError, SourceFile};
-use crate::codegen::{Codegen, Resolver, Target};
+use crate::codegen::{BuildError, Codegen, Resolver, Target};
 use crate::lexer::SyntaxError;
 use crate::pkg::{Arch, Package, PackageMeta};
 use llvm_sys::core::LLVMDisposeMessage;
 use llvm_sys::target_machine::LLVMGetDefaultTargetTriple;
 use std::collections::{BTreeMap, VecDeque};
 use std::ffi::{CStr, CString};
+use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -167,14 +168,14 @@ impl Project {
 
     fn build_for(&self, target: &str, resolver: &Resolver<'_>) -> Result<(), ProjectBuildError> {
         // Setup target.
-        let target = Target::new(CString::new(target).unwrap());
+        let target = Target::new(target);
 
         // Setup codegen context.
         let pkg = &self.meta.package;
         let mut cx = Codegen::new(
             &pkg.name,
             &pkg.version,
-            target,
+            &target,
             CString::new(pkg.name.as_str()).unwrap(),
             resolver,
         );
@@ -196,6 +197,22 @@ impl Project {
                     };
                 }
             }
+        }
+
+        // Create output directory.
+        let mut outputs = self.path.join(".build");
+
+        outputs.push(target.triple());
+
+        if let Err(e) = create_dir_all(&outputs) {
+            return Err(ProjectBuildError::CreateDirectoryFailed(outputs, e));
+        }
+
+        // Build the object file.
+        let obj = outputs.join(format!("{}.o", self.meta.package.name));
+
+        if let Err(e) = cx.build(&obj) {
+            return Err(ProjectBuildError::BuildFailed(obj, e));
         }
 
         Ok(())
@@ -236,4 +253,10 @@ pub enum ProjectLoadError {
 pub enum ProjectBuildError {
     #[error("invalid syntax in {0}")]
     InvalidSyntax(PathBuf, #[source] SyntaxError),
+
+    #[error("cannot create {0}")]
+    CreateDirectoryFailed(PathBuf, #[source] std::io::Error),
+
+    #[error("cannot build {0}")]
+    BuildFailed(PathBuf, #[source] BuildError),
 }

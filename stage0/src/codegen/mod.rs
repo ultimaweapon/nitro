@@ -8,20 +8,21 @@ pub use self::ty::*;
 use crate::ast::{Expression, Path, Representation, SourceFile, Struct, TypeDefinition, Use};
 use crate::lexer::SyntaxError;
 use crate::pkg::PackageVersion;
+use llvm_sys::analysis::{LLVMVerifierFailureAction, LLVMVerifyModule};
 use llvm_sys::core::{
     LLVMContextCreate, LLVMContextDispose, LLVMDisposeMessage, LLVMDisposeModule,
     LLVMModuleCreateWithNameInContext,
 };
 use llvm_sys::prelude::{LLVMContextRef, LLVMModuleRef};
-use llvm_sys::target::{
-    LLVMDisposeTargetData, LLVMPointerSize, LLVMSetModuleDataLayout, LLVMTargetDataRef,
-};
+use llvm_sys::target::{LLVMDisposeTargetData, LLVMPointerSize, LLVMTargetDataRef};
 use llvm_sys::target_machine::{
-    LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetDataLayout, LLVMCreateTargetMachine,
-    LLVMDisposeTargetMachine, LLVMGetTargetFromTriple, LLVMGetTargetMachineTriple, LLVMRelocMode,
-    LLVMTargetMachineRef,
+    LLVMCodeGenFileType, LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetDataLayout,
+    LLVMCreateTargetMachine, LLVMDisposeTargetMachine, LLVMGetTargetFromTriple,
+    LLVMGetTargetMachineTriple, LLVMRelocMode, LLVMTargetMachineEmitToFile, LLVMTargetMachineRef,
 };
-use std::ffi::CStr;
+use std::error::Error;
+use std::ffi::{c_char, CStr, CString};
+use std::fmt::{Display, Formatter};
 use std::ptr::{null, null_mut};
 
 mod block;
@@ -46,21 +47,20 @@ pub struct Codegen<'a> {
 }
 
 impl<'a> Codegen<'a> {
-    pub fn new<T, M>(
+    pub fn new<M>(
         pkg: &'a str,
         version: &'a PackageVersion,
-        target: Target<T>,
+        target: &Target,
         module: M,
         resolver: &'a Resolver<'a>,
     ) -> Self
     where
-        T: AsRef<CStr>,
         M: AsRef<CStr>,
     {
-        let triple = target.triple();
         let module = module.as_ref();
 
         // Get LLVM target.
+        let triple = CString::new(target.triple()).unwrap();
         let target = {
             let mut ptr = null_mut();
 
@@ -91,8 +91,6 @@ impl<'a> Codegen<'a> {
         // Create LLVM module.
         let llvm = unsafe { LLVMContextCreate() };
         let module = unsafe { LLVMModuleCreateWithNameInContext(module.as_ptr(), llvm) };
-
-        unsafe { LLVMSetModuleDataLayout(module, layout) };
 
         Self {
             module,
@@ -198,10 +196,10 @@ impl<'a> Codegen<'a> {
         // TODO: Create a mangleg name according to Itanium C++ ABI.
         // https://itanium-cxx-abi.github.io/cxx-abi/abi.html might be useful.
         if self.version.major() == 0 {
-            format!("{}::{}.{}", self.pkg, container, name)
+            format!("{}.{}.{}", self.pkg, container, name)
         } else {
             format!(
-                "{}::v{}::{}.{}",
+                "{}.v{}.{}.{}",
                 self.pkg,
                 self.version.major(),
                 container,
@@ -257,6 +255,41 @@ impl<'a> Codegen<'a> {
         Some(ty)
     }
 
+    pub fn build<F: AsRef<std::path::Path>>(self, file: F) -> Result<(), BuildError> {
+        // Verify module.
+        let mut err = null_mut();
+        let fail = unsafe {
+            LLVMVerifyModule(
+                self.module,
+                LLVMVerifierFailureAction::LLVMReturnStatusAction,
+                &mut err,
+            )
+        };
+
+        if fail != 0 {
+            return Err(BuildError::new(err));
+        }
+
+        // Build.
+        let file = file.as_ref().to_str().unwrap();
+        let file = CString::new(file).unwrap();
+        let fail = unsafe {
+            LLVMTargetMachineEmitToFile(
+                self.target,
+                self.module,
+                file.as_ptr() as _,
+                LLVMCodeGenFileType::LLVMObjectFile,
+                &mut err,
+            )
+        };
+
+        if fail != 0 {
+            Err(BuildError::new(err))
+        } else {
+            Ok(())
+        }
+    }
+
     fn build_project_type(&self, name: &str, ty: &SourceFile) -> LlvmType<'_, 'a> {
         match ty.ty().unwrap() {
             TypeDefinition::Struct(v) => self.build_project_struct(name, v),
@@ -284,5 +317,25 @@ impl<'a> Drop for Codegen<'a> {
         unsafe { LLVMContextDispose(self.llvm) };
         unsafe { LLVMDisposeTargetData(self.layout) };
         unsafe { LLVMDisposeTargetMachine(self.target) };
+    }
+}
+
+/// Represents an error when [`Codegen::build()`] is failed.
+#[derive(Debug)]
+pub struct BuildError(String);
+
+impl BuildError {
+    fn new(llvm: *mut c_char) -> Self {
+        let reason = unsafe { CStr::from_ptr(llvm).to_str().unwrap().to_owned() };
+        unsafe { LLVMDisposeMessage(llvm) };
+        Self(reason)
+    }
+}
+
+impl Error for BuildError {}
+
+impl Display for BuildError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }

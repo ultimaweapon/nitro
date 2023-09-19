@@ -1,16 +1,14 @@
-use std::ffi::CStr;
-
 /// Output target of the code.
-pub struct Target<T: AsRef<CStr>> {
-    triple: T,
+pub struct Target<'a> {
+    triple: &'a str,
 }
 
-impl<T: AsRef<CStr>> Target<T> {
-    pub fn new(triple: T) -> Self {
+impl<'a> Target<'a> {
+    pub fn new(triple: &'a str) -> Self {
         Self { triple }
     }
 
-    pub fn triple(&self) -> &CStr {
-        self.triple.as_ref()
+    pub fn triple(&self) -> &'a str {
+        self.triple
     }
 }
