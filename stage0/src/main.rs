@@ -1,5 +1,6 @@
 use crate::ast::ParseError;
 use crate::project::{Project, ProjectBuildError, ProjectLoadError};
+use clap::{command, value_parser, Arg, ArgMatches, Command};
 use llvm_sys::target::{
     LLVM_InitializeAllAsmPrinters, LLVM_InitializeAllTargetInfos, LLVM_InitializeAllTargetMCs,
     LLVM_InitializeAllTargets,
@@ -16,6 +17,27 @@ mod pkg;
 mod project;
 
 fn main() -> ExitCode {
+    // Parse arguments.
+    let args = command!()
+        .subcommand_required(true)
+        .subcommand(
+            Command::new("build").about("Build a Nitro project").arg(
+                Arg::new("path")
+                    .help("Path to the project")
+                    .value_name("PATH")
+                    .value_parser(value_parser!(PathBuf)),
+            ),
+        )
+        .get_matches();
+
+    // Execute the command.
+    match args.subcommand().unwrap() {
+        ("build", args) => build(args),
+        _ => todo!(),
+    }
+}
+
+fn build(args: &ArgMatches) -> ExitCode {
     // Initialize LLVM.
     unsafe {
         LLVM_InitializeAllTargetInfos();
@@ -24,36 +46,12 @@ fn main() -> ExitCode {
         LLVM_InitializeAllAsmPrinters();
     }
 
-    // Get binary name.
-    let mut args = std::env::args_os();
-    let app = match args.next() {
-        Some(v) => match v.into_string() {
-            Ok(v) => v,
-            Err(_) => {
-                eprintln!("Binary name in the command line is not UTF-8.");
-                return ExitCode::FAILURE;
-            }
-        },
-        None => {
-            eprintln!("No binary name in the command line.");
-            return ExitCode::FAILURE;
-        }
-    };
-
-    // Get path to the target project.
-    let project = match args.next() {
-        Some(v) => PathBuf::from(v),
-        None => {
-            eprintln!("Usage: {app} PATH");
-            return ExitCode::FAILURE;
-        }
-    };
-
     // Open the project.
-    let mut project = match Project::open(&project) {
+    let path = args.get_one::<PathBuf>("path").unwrap();
+    let mut project = match Project::open(&path) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("Cannot open {}: {}.", project.display(), join_nested(&e));
+            eprintln!("Cannot open {}: {}.", path.display(), join_nested(&e));
             return ExitCode::FAILURE;
         }
     };

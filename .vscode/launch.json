@@ -6,6 +6,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/stage0/target/debug/nitro",
       "args": [
+        "build",
         "${workspaceFolder}/std"
       ],
       "cwd": "${workspaceFolder}",
