@@ -30,3 +30,7 @@ if ($type -eq "Release") {
 } else {
     cargo install --path stage0 --root dist --debug
 }
+
+if ($LASTEXITCODE -ne 0) {
+    exit 1
+}

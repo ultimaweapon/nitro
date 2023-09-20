@@ -49,7 +49,7 @@ jobs:
           artifact: nitro-win-x86_64
     runs-on: ${{ matrix.os }}
     env:
-      LLVM_URL: https://github.com/llvm/llvm-project/releases/download/llvmorg-16.0.6/llvm-project-16.0.6.src.tar.xz
+      LLVM_URL: https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.1/llvm-project-17.0.1.src.tar.xz
       CMAKE_BUILD_PARALLEL_LEVEL: ${{ matrix.parallel }}
     steps:
     - name: Checkout source
