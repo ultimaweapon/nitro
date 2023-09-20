@@ -8,7 +8,6 @@ pub use self::ty::*;
 use crate::ast::{Expression, Path, Representation, SourceFile, Struct, TypeDefinition, Use};
 use crate::lexer::SyntaxError;
 use crate::pkg::PackageVersion;
-use llvm_sys::analysis::{LLVMVerifierFailureAction, LLVMVerifyModule};
 use llvm_sys::core::{
     LLVMContextCreate, LLVMContextDispose, LLVMDisposeMessage, LLVMDisposeModule,
     LLVMModuleCreateWithNameInContext,
@@ -60,7 +59,7 @@ impl<'a> Codegen<'a> {
         let module = module.as_ref();
 
         // Get LLVM target.
-        let triple = CString::new(target.triple()).unwrap();
+        let triple = CString::new(target.to_llvm()).unwrap();
         let target = {
             let mut ptr = null_mut();
 
@@ -256,21 +255,8 @@ impl<'a> Codegen<'a> {
     }
 
     pub fn build<F: AsRef<std::path::Path>>(self, file: F) -> Result<(), BuildError> {
-        // Verify module.
+        // TODO: Invoke LLVMVerifyModule.
         let mut err = null_mut();
-        let fail = unsafe {
-            LLVMVerifyModule(
-                self.module,
-                LLVMVerifierFailureAction::LLVMReturnStatusAction,
-                &mut err,
-            )
-        };
-
-        if fail != 0 {
-            return Err(BuildError::new(err));
-        }
-
-        // Build.
         let file = file.as_ref().to_str().unwrap();
         let file = CString::new(file).unwrap();
         let fail = unsafe {

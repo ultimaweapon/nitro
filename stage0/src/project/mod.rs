@@ -22,7 +22,8 @@ pub struct Project {
 }
 
 impl Project {
-    pub const SUPPORTED_TARGETS: [&str; 3] = [
+    pub const SUPPORTED_TARGETS: [&str; 4] = [
+        "aarch64-apple-darwin",
         "x86_64-apple-darwin",
         "x86_64-pc-win32-msvc",
         "x86_64-unknown-linux-gnu",
@@ -167,11 +168,9 @@ impl Project {
     }
 
     fn build_for(&self, target: &str, resolver: &Resolver<'_>) -> Result<(), ProjectBuildError> {
-        // Setup target.
-        let target = Target::new(target);
-
         // Setup codegen context.
         let pkg = &self.meta.package;
+        let target = Target::parse(target);
         let mut cx = Codegen::new(
             &pkg.name,
             &pkg.version,
@@ -202,7 +201,7 @@ impl Project {
         // Create output directory.
         let mut outputs = self.path.join(".build");
 
-        outputs.push(target.triple());
+        outputs.push(target.to_llvm());
 
         if let Err(e) = create_dir_all(&outputs) {
             return Err(ProjectBuildError::CreateDirectoryFailed(outputs, e));
