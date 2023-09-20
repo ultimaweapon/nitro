@@ -1,4 +1,8 @@
 {
+  "cmake.buildDirectory": "${workspaceFolder}/ffi/build",
+  "cmake.configureOnOpen": false,
+  "cmake.sourceDirectory": "${workspaceFolder}/ffi",
+  "cmake.statusbar.visibility": "hidden",
   "editor.rulers": [100],
   "files.exclude": {
     "deps": true

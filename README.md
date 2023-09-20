@@ -127,11 +127,23 @@ CMAKE_BUILD_PARALLEL_LEVEL=2 ./build-deps.sh
 .\build-deps.ps1
 ```
 
-### Build CLI
+### Build Nitro
+
+#### Linux and macOS
 
 ```sh
-cargo install --path stage0 --root dist
+./build-nitro.sh
 ```
+
+Supply `debug` as a first argument if you want to hack on Nitro.
+
+#### Windows
+
+```powershell
+.\build-nitro.ps1
+```
+
+Set parameter `Type` to `debug` if you want to hack on Nitro (e.g. `.\build-nitro.ps1 -Type debug`).
 
 ## License
 

@@ -7,7 +7,9 @@ use crate::pkg::{Arch, Package, PackageMeta};
 use llvm_sys::core::LLVMDisposeMessage;
 use llvm_sys::target_machine::LLVMGetDefaultTargetTriple;
 use std::collections::{BTreeMap, VecDeque};
+use std::error::Error;
 use std::ffi::{CStr, CString};
+use std::fmt::{Display, Formatter};
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -214,8 +216,21 @@ impl Project {
             return Err(ProjectBuildError::BuildFailed(obj, e));
         }
 
+        // Link.
+        let out = outputs.join(format!("{}.{}", self.meta.package.name, target.lib_ext()));
+        let mut err = String::new();
+
+        if !unsafe { lld_link(&mut err) } {
+            return Err(ProjectBuildError::LinkFailed(out, LinkError(err)));
+        }
+
         Ok(())
     }
+}
+
+#[allow(improper_ctypes)]
+extern "C" {
+    fn lld_link(err: &mut String) -> bool;
 }
 
 /// Represents an error when a [`Project`] is failed to open.
@@ -258,4 +273,19 @@ pub enum ProjectBuildError {
 
     #[error("cannot build {0}")]
     BuildFailed(PathBuf, #[source] BuildError),
+
+    #[error("cannot link {0}")]
+    LinkFailed(PathBuf, #[source] LinkError),
+}
+
+/// Represents an error when a [`Project`] is failed to link.
+#[derive(Debug)]
+pub struct LinkError(String);
+
+impl Error for LinkError {}
+
+impl Display for LinkError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
 }

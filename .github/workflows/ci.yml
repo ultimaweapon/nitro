@@ -22,6 +22,7 @@ jobs:
             rm llvm.tar.xz
             echo "key=linux-llvm-$hash" >> $GITHUB_OUTPUT
           deps: ./build-deps.sh
+          build: ./build-nitro.sh
           artifact: nitro-linux-x86_64
         - os: macos-latest
           parallel: 3
@@ -32,6 +33,7 @@ jobs:
             rm llvm.tar.xz
             echo "key=mac-llvm-$hash" >> $GITHUB_OUTPUT
           deps: ./build-deps.sh
+          build: ./build-nitro.sh
           artifact: nitro-mac-x86_64
         - os: windows-latest
           parallel: 2
@@ -43,6 +45,7 @@ jobs:
             Remove-Item llvm.tar
             echo "key=win-llvm-$hash" >> $env:GITHUB_OUTPUT
           deps: .\build-deps.ps1
+          build: .\build-nitro.ps1
           artifact: nitro-win-x86_64
     runs-on: ${{ matrix.os }}
     env:
@@ -61,8 +64,8 @@ jobs:
         key: ${{ steps.llvm.outputs.key }}
     - name: Build dependencies
       run: ${{ matrix.deps }}
-    - name: Build CLI
-      run: cargo install --path stage0 --root dist
+    - name: Build Nitro
+      run: ${{ matrix.build }}
     - name: Cache LLVM
       uses: actions/cache/save@v3
       with:

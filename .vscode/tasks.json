@@ -2,12 +2,20 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "stage0",
-      "type": "cargo",
-      "command": "build",
+      "label": "build",
       "group": "build",
-      "options": {
-        "cwd": "${workspaceFolder}/stage0"
+      "type": "shell",
+      "linux": {
+        "command": "${workspaceFolder}/build-nitro.sh",
+        "args": ["debug"]
+      },
+      "osx": {
+        "command": "${workspaceFolder}/build-nitro.sh",
+        "args": ["debug"]
+      },
+      "windows": {
+        "command": "${workspaceFolder}/build-nitro.ps1",
+        "args": ["-Type", "debug"]
       }
     }
   ]

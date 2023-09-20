@@ -87,6 +87,10 @@ fn build(args: &ArgMatches) -> ExitCode {
             eprintln!("Cannot build {}: {}", p.display(), e);
             return ExitCode::FAILURE;
         }
+        Err(ProjectBuildError::LinkFailed(p, e)) => {
+            eprintln!("Cannot link {}: {}.", p.display(), e);
+            return ExitCode::FAILURE;
+        }
     };
 
     ExitCode::SUCCESS

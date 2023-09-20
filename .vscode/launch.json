@@ -1,10 +1,10 @@
 {
   "configurations": [
     {
-      "name": "Stage 0 (std)",
+      "name": "Nitro",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/stage0/target/debug/nitro",
+      "program": "${workspaceFolder}/dist/bin/nitro",
       "args": [
         "build",
         "${workspaceFolder}/std"
@@ -13,7 +13,7 @@
       "env": {
         "RUST_BACKTRACE": "1"
       },
-      "preLaunchTask": "stage0"
+      "preLaunchTask": "build"
     }
   ],
   "version": "2.0.0"
