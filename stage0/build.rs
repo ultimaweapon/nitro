@@ -4,7 +4,7 @@ fn main() {
     let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
 
     if profile == "release" && os == "linux" {
-        println!("cargo:rustc-link-arg-bins=-static-libstdc++");
+        println!("cargo:rustc-link-arg-bins=-l:libstdc++.a");
     }
 
     // Link FFI library.
