@@ -4,7 +4,6 @@ fn main() {
     let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
 
     if profile == "release" && os == "linux" {
-        println!("cargo:rustc-link-arg-bins=-static-libgcc");
         println!("cargo:rustc-link-arg-bins=-static-libstdc++");
     }
 
