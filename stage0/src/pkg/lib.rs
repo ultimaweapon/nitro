@@ -12,3 +12,9 @@
 /// There will be two states of `foo` here, which likely to cause a headache to Alice to figure out
 /// what wrong with `foo` when Carlos report something is not working.
 pub struct Library {}
+
+impl Library {
+    pub fn new() -> Self {
+        Self {}
+    }
+}

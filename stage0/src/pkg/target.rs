@@ -1,4 +1,5 @@
 /// Output target of the code.
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Target {
     arch: Architecture,
     vendor: Vendor,
@@ -75,14 +76,14 @@ impl Target {
 }
 
 /// Architecture CPU of the target.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Architecture {
     Aarch64,
     X86_64,
 }
 
 /// Vendor of the target.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Vendor {
     Apple,
     Pc,
@@ -90,7 +91,7 @@ pub enum Vendor {
 }
 
 /// OS of the target.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OperatingSystem {
     Darwin,
     Linux,
@@ -98,7 +99,7 @@ pub enum OperatingSystem {
 }
 
 /// Environment of the target.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Environment {
     Gnu,
     Msvc,

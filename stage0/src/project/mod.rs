@@ -3,11 +3,11 @@ pub use self::meta::*;
 use crate::ast::{ParseError, SourceFile};
 use crate::codegen::{BuildError, Codegen, Resolver};
 use crate::lexer::SyntaxError;
-use crate::pkg::{Arch, OperatingSystem, Package, PackageMeta, Target};
+use crate::pkg::{Library, OperatingSystem, Package, PackageMeta, Target};
 use llvm_sys::core::LLVMDisposeMessage;
 use llvm_sys::target_machine::LLVMGetDefaultTargetTriple;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::error::Error;
 use std::ffi::{c_char, CStr, CString};
 use std::fmt::{Display, Formatter};
@@ -121,16 +121,24 @@ impl Project {
         }
 
         // Build.
-        let bin = Arch::new();
-        let lib = Arch::new();
+        let mut exes = HashMap::new();
+        let mut libs = HashMap::new();
+        let target = Target::parse(&target);
+        let bins = self.build_for(&target, &resolver)?;
 
-        self.build_for(&target, &resolver)?;
+        if let Some(exe) = bins.exe {
+            assert!(exes.insert(target.clone(), exe).is_none());
+        }
+
+        if let Some(lib) = bins.lib {
+            assert!(libs.insert(target, lib).is_none());
+        }
 
         // Setup metadata.
         let pkg = &self.meta.package;
         let meta = PackageMeta::new(pkg.name.clone(), pkg.version.clone());
 
-        Ok(Package::new(meta, bin, lib))
+        Ok(Package::new(meta, exes, libs))
     }
 
     fn load_source(&mut self, path: PathBuf) -> Result<(), ProjectLoadError> {
@@ -171,10 +179,13 @@ impl Project {
         Ok(())
     }
 
-    fn build_for(&self, target: &str, resolver: &Resolver<'_>) -> Result<(), ProjectBuildError> {
+    fn build_for(
+        &self,
+        target: &Target,
+        resolver: &Resolver<'_>,
+    ) -> Result<BuildOutputs, ProjectBuildError> {
         // Setup codegen context.
         let pkg = &self.meta.package;
-        let target = Target::parse(target);
         let mut cx = Codegen::new(
             &pkg.name,
             &pkg.version,
@@ -254,7 +265,10 @@ impl Project {
             return Err(ProjectBuildError::LinkFailed(out, e));
         }
 
-        Ok(())
+        Ok(BuildOutputs {
+            exe: None,
+            lib: Some((out, Library::new())),
+        })
     }
 
     fn link(linker: &str, args: &[Cow<'static, str>]) -> Result<(), LinkError> {
@@ -277,6 +291,11 @@ impl Project {
             Err(LinkError(err))
         }
     }
+}
+
+struct BuildOutputs {
+    exe: Option<PathBuf>,
+    lib: Option<(PathBuf, Library)>,
 }
 
 #[allow(improper_ctypes)]

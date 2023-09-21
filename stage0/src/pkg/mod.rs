@@ -3,6 +3,7 @@ pub use self::meta::*;
 pub use self::target::*;
 pub use self::ty::*;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -16,8 +17,8 @@ mod ty;
 /// One package can contains only a single executable and a single library, per architecture.
 pub struct Package {
     meta: PackageMeta,
-    exe: Arch<PathBuf>,
-    lib: Arch<(PathBuf, Library)>,
+    exes: HashMap<Target, PathBuf>,
+    libs: HashMap<Target, (PathBuf, Library)>,
 }
 
 impl Package {
@@ -25,10 +26,14 @@ impl Package {
         todo!()
     }
 
-    pub fn new(meta: PackageMeta, exe: Arch<PathBuf>, lib: Arch<(PathBuf, Library)>) -> Self {
-        assert!(exe.is_some() || lib.is_some());
+    pub fn new(
+        meta: PackageMeta,
+        exes: HashMap<Target, PathBuf>,
+        libs: HashMap<Target, (PathBuf, Library)>,
+    ) -> Self {
+        assert!(!exes.is_empty() || !libs.is_empty());
 
-        Self { meta, exe, lib }
+        Self { meta, exes, libs }
     }
 
     pub fn pack<F: AsRef<Path>>(&self, file: F) -> Result<(), PackagePackError> {
@@ -41,32 +46,6 @@ impl Package {
         T: AsRef<Path>,
     {
         todo!()
-    }
-}
-
-/// Encapsuate an object per architecture.
-pub struct Arch<T> {
-    aarch64_apple_darwin: Option<T>,
-    x86_64_apple_darwin: Option<T>,
-    x86_64_pc_win32_msvc: Option<T>,
-    x86_64_unknown_linux_gnu: Option<T>,
-}
-
-impl<T> Arch<T> {
-    pub fn new() -> Self {
-        Self {
-            aarch64_apple_darwin: None,
-            x86_64_apple_darwin: None,
-            x86_64_pc_win32_msvc: None,
-            x86_64_unknown_linux_gnu: None,
-        }
-    }
-
-    pub fn is_some(&self) -> bool {
-        self.aarch64_apple_darwin.is_some()
-            || self.x86_64_apple_darwin.is_some()
-            || self.x86_64_pc_win32_msvc.is_some()
-            || self.x86_64_unknown_linux_gnu.is_some()
     }
 }
 
