@@ -1,5 +1,6 @@
 pub use self::lib::*;
 pub use self::meta::*;
+pub use self::target::*;
 pub use self::ty::*;
 
 use std::path::{Path, PathBuf};
@@ -7,6 +8,7 @@ use thiserror::Error;
 
 mod lib;
 mod meta;
+mod target;
 mod ty;
 
 /// A unpacked Nitro package.

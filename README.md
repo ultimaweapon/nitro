@@ -4,7 +4,7 @@ Nitro is an experimental OOP language inspired by Rust with the following goals:
 
 - Compiled to native code.
 - [Non-fragile](https://en.wikipedia.org/wiki/Fragile_binary_interface_problem) and stable ABI.
-- A library is distributed as a compiled binary similar to JAR or DLL file.
+- A Nitro library will be distributed as a compiled binary similar to JAR or DLL file.
 - GC using reference counting.
 - Runtime reflection.
 - Error handling using exception.

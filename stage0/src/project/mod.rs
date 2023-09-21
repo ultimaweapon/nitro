@@ -1,9 +1,9 @@
 pub use self::meta::*;
 
 use crate::ast::{ParseError, SourceFile};
-use crate::codegen::{BuildError, Codegen, OperatingSystem, Resolver, Target};
+use crate::codegen::{BuildError, Codegen, Resolver};
 use crate::lexer::SyntaxError;
-use crate::pkg::{Arch, Package, PackageMeta};
+use crate::pkg::{Arch, OperatingSystem, Package, PackageMeta, Target};
 use llvm_sys::core::LLVMDisposeMessage;
 use llvm_sys::target_machine::LLVMGetDefaultTargetTriple;
 use std::borrow::Cow;

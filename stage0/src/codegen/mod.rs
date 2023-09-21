@@ -2,12 +2,11 @@ pub use self::block::*;
 pub use self::builder::*;
 pub use self::func::*;
 pub use self::resolver::*;
-pub use self::target::*;
 pub use self::ty::*;
 
 use crate::ast::{Expression, Path, Representation, SourceFile, Struct, TypeDefinition, Use};
 use crate::lexer::SyntaxError;
-use crate::pkg::PackageVersion;
+use crate::pkg::{PackageVersion, Target};
 use llvm_sys::core::{
     LLVMContextCreate, LLVMContextDispose, LLVMDisposeMessage, LLVMDisposeModule,
     LLVMModuleCreateWithNameInContext,
@@ -28,7 +27,6 @@ mod block;
 mod builder;
 mod func;
 mod resolver;
-mod target;
 mod ty;
 
 /// A context for code generation.
