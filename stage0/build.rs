@@ -13,4 +13,13 @@ fn main() {
 
     println!("cargo:rustc-link-search={}", ffi);
     println!("cargo:rustc-link-lib=ffi");
+
+    // Link LLVM.
+    let llvm = std::env::var("LLVM_SYS_170_PREFIX").unwrap();
+
+    println!("cargo:rustc-link-search={}/lib", llvm);
+    println!("cargo:rustc-link-lib=lldCOFF");
+    println!("cargo:rustc-link-lib=lldCommon");
+    println!("cargo:rustc-link-lib=lldELF");
+    println!("cargo:rustc-link-lib=lldMachO");
 }

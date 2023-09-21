@@ -39,12 +39,8 @@ impl Target {
         target
     }
 
-    pub fn lib_ext(&self) -> &'static str {
-        match self.os {
-            OperatingSystem::Darwin => "dylib",
-            OperatingSystem::Linux => "so",
-            OperatingSystem::Win32 => "dll",
-        }
+    pub fn os(&self) -> OperatingSystem {
+        self.os
     }
 
     pub fn to_llvm(&self) -> String {

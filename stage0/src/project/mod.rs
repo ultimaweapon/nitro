@@ -1,17 +1,19 @@
 pub use self::meta::*;
 
 use crate::ast::{ParseError, SourceFile};
-use crate::codegen::{BuildError, Codegen, Resolver, Target};
+use crate::codegen::{BuildError, Codegen, OperatingSystem, Resolver, Target};
 use crate::lexer::SyntaxError;
 use crate::pkg::{Arch, Package, PackageMeta};
 use llvm_sys::core::LLVMDisposeMessage;
 use llvm_sys::target_machine::LLVMGetDefaultTargetTriple;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
-use std::ffi::{CStr, CString};
+use std::ffi::{c_char, CStr, CString};
 use std::fmt::{Display, Formatter};
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
+use std::ptr::null;
 use thiserror::Error;
 
 mod meta;
@@ -216,21 +218,76 @@ impl Project {
             return Err(ProjectBuildError::BuildFailed(obj, e));
         }
 
-        // Link.
-        let out = outputs.join(format!("{}.{}", self.meta.package.name, target.lib_ext()));
-        let mut err = String::new();
+        // Prepare to link.
+        let mut args: Vec<Cow<'static, str>> = Vec::new();
+        let out = outputs.join(format!(
+            "{}.{}",
+            self.meta.package.name,
+            match target.os() {
+                OperatingSystem::Darwin => "dylib",
+                OperatingSystem::Linux => "so",
+                OperatingSystem::Win32 => "dll",
+            }
+        ));
 
-        if !unsafe { lld_link(&mut err) } {
-            return Err(ProjectBuildError::LinkFailed(out, LinkError(err)));
+        let linker = match target.os() {
+            OperatingSystem::Darwin => {
+                args.push("-o".into());
+                args.push(out.to_str().unwrap().to_owned().into());
+                "ld64.lld"
+            }
+            OperatingSystem::Linux => {
+                args.push("-o".into());
+                args.push(out.to_str().unwrap().to_owned().into());
+                "ld.lld"
+            }
+            OperatingSystem::Win32 => {
+                args.push(format!("/out:{}", out.to_str().unwrap()).into());
+                "lld-link"
+            }
+        };
+
+        args.push(obj.to_str().unwrap().to_owned().into());
+
+        // Link.
+        if let Err(e) = Self::link(linker, &args) {
+            return Err(ProjectBuildError::LinkFailed(out, e));
         }
 
         Ok(())
+    }
+
+    fn link(linker: &str, args: &[Cow<'static, str>]) -> Result<(), LinkError> {
+        // Setup arguments.
+        let args: Vec<CString> = args
+            .iter()
+            .map(|a| CString::new(a.as_ref()).unwrap())
+            .collect();
+
+        // Run linker.
+        let linker = CString::new(linker).unwrap();
+        let mut args: Vec<*const c_char> = args.iter().map(|a| a.as_ptr()).collect();
+        let mut err = String::new();
+
+        args.push(null());
+
+        if unsafe { lld_link(linker.as_ptr(), args.as_ptr(), &mut err) } {
+            Ok(())
+        } else {
+            Err(LinkError(err))
+        }
     }
 }
 
 #[allow(improper_ctypes)]
 extern "C" {
-    fn lld_link(err: &mut String) -> bool;
+    fn lld_link(linker: *const c_char, args: *const *const c_char, err: &mut String) -> bool;
+}
+
+#[no_mangle]
+unsafe extern "C" fn nitro_string_set(s: &mut String, v: *const c_char) {
+    s.clear();
+    s.push_str(CStr::from_ptr(v).to_str().unwrap());
 }
 
 /// Represents an error when a [`Project`] is failed to open.
