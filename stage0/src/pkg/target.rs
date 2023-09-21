@@ -8,36 +8,35 @@ pub struct Target {
 }
 
 impl Target {
-    pub fn parse(triple: &str) -> Self {
-        let mut triple = triple.split('-').fuse();
-        let target = Self {
-            arch: match triple.next().unwrap() {
-                "aarch64" => Architecture::Aarch64,
-                "x86_64" => Architecture::X86_64,
-                _ => todo!(),
-            },
-            vendor: match triple.next().unwrap() {
-                "apple" => Vendor::Apple,
-                "pc" => Vendor::Pc,
-                "unknown" => Vendor::Unknown,
-                _ => todo!(),
-            },
-            os: match triple.next().unwrap() {
-                "darwin" => OperatingSystem::Darwin,
-                "linux" => OperatingSystem::Linux,
-                "win32" => OperatingSystem::Win32,
-                _ => todo!(),
-            },
-            env: triple.next().map(|v| match v {
-                "gnu" => Environment::Gnu,
-                "msvc" => Environment::Msvc,
-                _ => todo!(),
-            }),
-        };
+    pub const SUPPORTED_TARGETS: [Target; 4] = [
+        Target {
+            arch: Architecture::Aarch64,
+            vendor: Vendor::Apple,
+            os: OperatingSystem::Darwin,
+            env: None,
+        },
+        Target {
+            arch: Architecture::X86_64,
+            vendor: Vendor::Apple,
+            os: OperatingSystem::Darwin,
+            env: None,
+        },
+        Target {
+            arch: Architecture::X86_64,
+            vendor: Vendor::Pc,
+            os: OperatingSystem::Win32,
+            env: Some(Environment::Msvc),
+        },
+        Target {
+            arch: Architecture::X86_64,
+            vendor: Vendor::Unknown,
+            os: OperatingSystem::Linux,
+            env: Some(Environment::Gnu),
+        },
+    ];
 
-        assert!(triple.next().is_none());
-
-        target
+    pub fn arch(&self) -> Architecture {
+        self.arch
     }
 
     pub fn os(&self) -> OperatingSystem {
@@ -47,10 +46,7 @@ impl Target {
     pub fn to_llvm(&self) -> String {
         let mut buf = String::with_capacity(64);
 
-        match self.arch {
-            Architecture::Aarch64 => buf.push_str("aarch64"),
-            Architecture::X86_64 => buf.push_str("x86_64"),
-        }
+        buf.push_str(self.arch.name());
 
         match self.vendor {
             Vendor::Apple => buf.push_str("-apple"),
@@ -80,6 +76,15 @@ impl Target {
 pub enum Architecture {
     Aarch64,
     X86_64,
+}
+
+impl Architecture {
+    pub fn name(self) -> &'static str {
+        match self {
+            Architecture::Aarch64 => "aarch64",
+            Architecture::X86_64 => "x86_64",
+        }
+    }
 }
 
 /// Vendor of the target.

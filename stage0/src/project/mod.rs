@@ -3,9 +3,7 @@ pub use self::meta::*;
 use crate::ast::{ParseError, SourceFile};
 use crate::codegen::{BuildError, Codegen, Resolver};
 use crate::lexer::SyntaxError;
-use crate::pkg::{Library, OperatingSystem, Package, PackageMeta, Target};
-use llvm_sys::core::LLVMDisposeMessage;
-use llvm_sys::target_machine::LLVMGetDefaultTargetTriple;
+use crate::pkg::{Architecture, Library, OperatingSystem, Package, PackageMeta, Target};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::error::Error;
@@ -26,13 +24,6 @@ pub struct Project {
 }
 
 impl Project {
-    pub const SUPPORTED_TARGETS: [&str; 4] = [
-        "aarch64-apple-darwin",
-        "x86_64-apple-darwin",
-        "x86_64-pc-win32-msvc",
-        "x86_64-unknown-linux-gnu",
-    ];
-
     pub fn open<P: Into<PathBuf>>(path: P) -> Result<Self, ProjectOpenError> {
         // Read the project.
         let path = path.into();
@@ -108,30 +99,20 @@ impl Project {
 
         resolver.populate_project_types(&self.sources);
 
-        // Get host target.
-        let target = unsafe {
-            let ptr = LLVMGetDefaultTargetTriple();
-            let str = CStr::from_ptr(ptr).to_str().unwrap().to_owned();
-            LLVMDisposeMessage(ptr);
-            str
-        };
-
-        if !Self::SUPPORTED_TARGETS.iter().any(|&v| v == target) {
-            todo!("cross-compilation");
-        }
-
         // Build.
         let mut exes = HashMap::new();
         let mut libs = HashMap::new();
-        let target = Target::parse(&target);
-        let bins = self.build_for(&target, &resolver)?;
 
-        if let Some(exe) = bins.exe {
-            assert!(exes.insert(target.clone(), exe).is_none());
-        }
+        for target in &Target::SUPPORTED_TARGETS {
+            let bins = self.build_for(target, &resolver)?;
 
-        if let Some(lib) = bins.lib {
-            assert!(libs.insert(target, lib).is_none());
+            if let Some(exe) = bins.exe {
+                assert!(exes.insert(target.clone(), exe).is_none());
+            }
+
+            if let Some(lib) = bins.lib {
+                assert!(libs.insert(target.clone(), lib).is_none());
+            }
         }
 
         // Setup metadata.
@@ -245,6 +226,16 @@ impl Project {
             OperatingSystem::Darwin => {
                 args.push("-o".into());
                 args.push(out.to_str().unwrap().to_owned().into());
+                args.push("-arch".into());
+                args.push(match target.arch() {
+                    Architecture::Aarch64 => "arm64".into(),
+                    Architecture::X86_64 => "x86_64".into(),
+                });
+                args.push("-platform_version".into());
+                args.push("macos".into());
+                args.push("10".into());
+                args.push("11".into());
+                args.push("-dylib".into());
                 "ld64.lld"
             }
             OperatingSystem::Linux => {
@@ -254,6 +245,7 @@ impl Project {
             }
             OperatingSystem::Win32 => {
                 args.push(format!("/out:{}", out.to_str().unwrap()).into());
+                args.push("/dll".into());
                 "lld-link"
             }
         };
@@ -288,7 +280,7 @@ impl Project {
         if unsafe { lld_link(linker.as_ptr(), args.as_ptr(), &mut err) } {
             Ok(())
         } else {
-            Err(LinkError(err))
+            Err(LinkError(err.trim_end().to_owned()))
         }
     }
 }
