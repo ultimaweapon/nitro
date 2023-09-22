@@ -5,23 +5,18 @@ pub use self::resolver::*;
 pub use self::ty::*;
 
 use crate::ast::{Expression, Path, Representation, SourceFile, Struct, TypeDefinition, Use};
+use crate::ffi::{
+    llvm_context_dispose, llvm_context_new, llvm_layout_dispose, llvm_layout_new,
+    llvm_layout_pointer_size, llvm_module_dispose, llvm_module_new, llvm_module_set_layout,
+    llvm_target_create_machine, llvm_target_dispose_machine, llvm_target_emit_object,
+    llvm_target_lookup,
+};
 use crate::lexer::SyntaxError;
-use crate::pkg::{PackageVersion, Target};
-use llvm_sys::core::{
-    LLVMContextCreate, LLVMContextDispose, LLVMDisposeMessage, LLVMDisposeModule,
-    LLVMModuleCreateWithNameInContext,
-};
-use llvm_sys::prelude::{LLVMContextRef, LLVMModuleRef};
-use llvm_sys::target::{LLVMDisposeTargetData, LLVMPointerSize, LLVMTargetDataRef};
-use llvm_sys::target_machine::{
-    LLVMCodeGenFileType, LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetDataLayout,
-    LLVMCreateTargetMachine, LLVMDisposeTargetMachine, LLVMGetTargetFromTriple,
-    LLVMGetTargetMachineTriple, LLVMRelocMode, LLVMTargetMachineEmitToFile, LLVMTargetMachineRef,
-};
+use crate::pkg::{OperatingSystem, PackageVersion, Target};
 use std::error::Error;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString};
 use std::fmt::{Display, Formatter};
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 
 mod block;
 mod builder;
@@ -33,13 +28,14 @@ mod ty;
 ///
 /// Each [`Codegen`] can output only one binary.
 pub struct Codegen<'a> {
-    module: LLVMModuleRef,
-    llvm: LLVMContextRef,
+    module: *mut crate::ffi::LlvmModule,
+    llvm: *mut crate::ffi::LlvmContext,
+    layout: *mut crate::ffi::LlvmLayout,
+    machine: *mut crate::ffi::LlvmMachine,
     pkg: &'a str,
     version: &'a PackageVersion,
+    target: &'a Target,
     namespace: &'a str,
-    layout: LLVMTargetDataRef,
-    target: LLVMTargetMachineRef,
     resolver: &'a Resolver<'a>,
 }
 
@@ -47,7 +43,7 @@ impl<'a> Codegen<'a> {
     pub fn new<M>(
         pkg: &'a str,
         version: &'a PackageVersion,
-        target: &Target,
+        target: &'a Target,
         module: M,
         resolver: &'a Resolver<'a>,
     ) -> Self
@@ -58,45 +54,34 @@ impl<'a> Codegen<'a> {
 
         // Get LLVM target.
         let triple = CString::new(target.to_llvm()).unwrap();
-        let target = {
-            let mut ptr = null_mut();
-
-            assert_eq!(
-                unsafe { LLVMGetTargetFromTriple(triple.as_ptr(), &mut ptr, null_mut()) },
-                0
-            );
-
+        let llvm = {
+            let mut err = String::new();
+            let ptr = unsafe { llvm_target_lookup(triple.as_ptr(), &mut err) };
+            assert!(!ptr.is_null());
             ptr
         };
 
         // Create LLVM target machine.
-        let target = unsafe {
-            LLVMCreateTargetMachine(
-                target,
-                triple.as_ptr(),
-                null(),
-                null(),
-                LLVMCodeGenOptLevel::LLVMCodeGenLevelDefault,
-                LLVMRelocMode::LLVMRelocDefault,
-                LLVMCodeModel::LLVMCodeModelDefault,
-            )
-        };
+        let machine = unsafe { llvm_target_create_machine(llvm, triple.as_ptr(), null(), null()) };
 
         // Create LLVM layout.
-        let layout = unsafe { LLVMCreateTargetDataLayout(target) };
+        let layout = unsafe { llvm_layout_new(machine) };
 
         // Create LLVM module.
-        let llvm = unsafe { LLVMContextCreate() };
-        let module = unsafe { LLVMModuleCreateWithNameInContext(module.as_ptr(), llvm) };
+        let llvm = unsafe { llvm_context_new() };
+        let module = unsafe { llvm_module_new(llvm, module.as_ptr()) };
+
+        unsafe { llvm_module_set_layout(module, layout) };
 
         Self {
             module,
             llvm,
+            layout,
+            machine,
             pkg,
             version,
-            namespace: "",
-            layout,
             target,
+            namespace: "",
             resolver,
         }
     }
@@ -105,18 +90,9 @@ impl<'a> Codegen<'a> {
         self.namespace = v;
     }
 
-    pub fn triple(&self) -> String {
-        unsafe {
-            let ptr = LLVMGetTargetMachineTriple(self.target);
-            let triple = CStr::from_ptr(ptr).to_str().unwrap().to_owned();
-            LLVMDisposeMessage(ptr);
-            triple
-        }
-    }
-
     /// Returns the pointer size, in bytes.
     pub fn pointer_size(&self) -> u32 {
-        unsafe { LLVMPointerSize(self.layout) }
+        unsafe { llvm_layout_pointer_size(self.layout) }
     }
 
     pub fn run_cfg(&self, expr: &[Expression]) -> Result<bool, SyntaxError> {
@@ -128,22 +104,19 @@ impl<'a> Codegen<'a> {
         };
 
         // Get second expression.
-        let triple = self.triple();
-        let os = triple.split('-').nth(2).unwrap();
+        let os = self.target.os();
         let (equal, span) = match expr.next() {
             Some(Expression::NotEqual(f, s)) => (false, f.span() + s.span()),
             Some(Expression::Equal(f, s)) => (true, f.span() + s.span()),
             Some(e) => return Err(SyntaxError::new(e.span(), "unsupported expression")),
             None => match lhs.value() {
                 "unix" => match os {
-                    "darwin" | "linux" => return Ok(true),
-                    "win32" => return Ok(false),
-                    _ => todo!(),
+                    OperatingSystem::Darwin | OperatingSystem::Linux => return Ok(true),
+                    OperatingSystem::Win32 => return Ok(false),
                 },
                 "win32" => match os {
-                    "darwin" | "linux" => return Ok(false),
-                    "win32" => return Ok(true),
-                    _ => todo!(),
+                    OperatingSystem::Darwin | OperatingSystem::Linux => return Ok(false),
+                    OperatingSystem::Win32 => return Ok(true),
                 },
                 _ => return Err(SyntaxError::new(lhs.span().clone(), "unknown argument")),
             },
@@ -165,18 +138,16 @@ impl<'a> Codegen<'a> {
         let res = if equal {
             match rhs.value() {
                 "windows" => match os {
-                    "darwin" | "linux" => false,
-                    "win32" => true,
-                    _ => todo!(),
+                    OperatingSystem::Darwin | OperatingSystem::Linux => false,
+                    OperatingSystem::Win32 => true,
                 },
                 _ => todo!(),
             }
         } else {
             match rhs.value() {
                 "windows" => match os {
-                    "darwin" | "linux" => true,
-                    "win32" => false,
-                    _ => todo!(),
+                    OperatingSystem::Darwin | OperatingSystem::Linux => true,
+                    OperatingSystem::Win32 => false,
                 },
                 _ => todo!(),
             }
@@ -254,21 +225,12 @@ impl<'a> Codegen<'a> {
 
     pub fn build<F: AsRef<std::path::Path>>(self, file: F) -> Result<(), BuildError> {
         // TODO: Invoke LLVMVerifyModule.
-        let mut err = null_mut();
+        let mut err = String::new();
         let file = file.as_ref().to_str().unwrap();
         let file = CString::new(file).unwrap();
-        let fail = unsafe {
-            LLVMTargetMachineEmitToFile(
-                self.target,
-                self.module,
-                file.as_ptr() as _,
-                LLVMCodeGenFileType::LLVMObjectFile,
-                &mut err,
-            )
-        };
 
-        if fail != 0 {
-            Err(BuildError::new(err))
+        if !unsafe { llvm_target_emit_object(self.machine, self.module, file.as_ptr(), &mut err) } {
+            Err(BuildError(err))
         } else {
             Ok(())
         }
@@ -297,24 +259,16 @@ impl<'a> Codegen<'a> {
 
 impl<'a> Drop for Codegen<'a> {
     fn drop(&mut self) {
-        unsafe { LLVMDisposeModule(self.module) };
-        unsafe { LLVMContextDispose(self.llvm) };
-        unsafe { LLVMDisposeTargetData(self.layout) };
-        unsafe { LLVMDisposeTargetMachine(self.target) };
+        unsafe { llvm_module_dispose(self.module) };
+        unsafe { llvm_context_dispose(self.llvm) };
+        unsafe { llvm_layout_dispose(self.layout) };
+        unsafe { llvm_target_dispose_machine(self.machine) };
     }
 }
 
 /// Represents an error when [`Codegen::build()`] is failed.
 #[derive(Debug)]
 pub struct BuildError(String);
-
-impl BuildError {
-    fn new(llvm: *mut c_char) -> Self {
-        let reason = unsafe { CStr::from_ptr(llvm).to_str().unwrap().to_owned() };
-        unsafe { LLVMDisposeMessage(llvm) };
-        Self(reason)
-    }
-}
 
 impl Error for BuildError {}
 

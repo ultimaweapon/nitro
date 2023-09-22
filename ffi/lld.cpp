@@ -9,7 +9,8 @@ LLD_HAS_DRIVER(coff)
 LLD_HAS_DRIVER(elf)
 LLD_HAS_DRIVER(macho)
 
-extern "C" bool lld_link(const char *flavor, const char *args[], nitro_string &err) {
+extern "C" bool lld_link(const char *flavor, const char *args[], nitro_string &err)
+{
     // Setup arguments.
     std::vector<const char *> vec{flavor};
 

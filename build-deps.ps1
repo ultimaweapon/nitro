@@ -1,13 +1,18 @@
 # LLVM
 cmake `
     --install-prefix "$PSScriptRoot/lib/llvm" `
-    -B "$PSScriptRoot/deps/llvm/build" `
-    -Wno-dev `
     -DCMAKE_BUILD_TYPE:STRING=Release `
+    -DLLVM_ENABLE_LIBEDIT:BOOL=OFF `
+    -DLLVM_ENABLE_LIBPFM:BOOL=OFF `
+    -DLLVM_ENABLE_LIBXML2:BOOL=OFF `
+    -DLLVM_ENABLE_TERMINFO:BOOL=OFF `
+    -DLLVM_ENABLE_ZLIB:BOOL=OFF `
     -DLLVM_ENABLE_ZSTD:BOOL=OFF `
     -DLLVM_APPEND_VC_REV:BOOL=OFF `
     -DLLVM_TARGETS_TO_BUILD:STRING="AArch64;X86" `
     -DLLVM_ENABLE_PROJECTS:STRING="lld" `
+    -Wno-dev `
+    -B "$PSScriptRoot/deps/llvm/build" `
     "$PSScriptRoot/deps/llvm/llvm"
 
 if ($LASTEXITCODE -ne 0) {

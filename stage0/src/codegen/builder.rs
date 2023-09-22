@@ -1,21 +1,20 @@
 use super::{BasicBlock, Codegen};
-use llvm_sys::core::{
-    LLVMBuildRetVoid, LLVMCreateBuilderInContext, LLVMDisposeBuilder, LLVMPositionBuilderAtEnd,
+use crate::ffi::{
+    llvm_builder_append_block, llvm_builder_dispose, llvm_builder_new, llvm_builder_ret_void,
 };
-use llvm_sys::prelude::LLVMBuilderRef;
 use std::marker::PhantomData;
 
 /// Encapsulate an LLVM IR builder.
 pub struct Builder<'a, 'b: 'a> {
-    raw: LLVMBuilderRef,
+    raw: *mut crate::ffi::LlvmBuilder,
     phantom: PhantomData<&'a Codegen<'b>>,
 }
 
 impl<'a, 'b: 'a> Builder<'a, 'b> {
     pub fn new(cx: &'a Codegen<'b>, block: &mut BasicBlock<'a, 'b>) -> Self {
-        let raw = unsafe { LLVMCreateBuilderInContext(cx.llvm) };
+        let raw = unsafe { llvm_builder_new(cx.llvm) };
 
-        unsafe { LLVMPositionBuilderAtEnd(raw, block.as_raw()) };
+        unsafe { llvm_builder_append_block(raw, block.as_raw()) };
 
         Self {
             raw,
@@ -23,13 +22,13 @@ impl<'a, 'b: 'a> Builder<'a, 'b> {
         }
     }
 
-    pub fn ret_void(&mut self) {
-        unsafe { LLVMBuildRetVoid(self.raw) };
+    pub fn ret_void(&mut self) -> *mut crate::ffi::LlvmReturn {
+        unsafe { llvm_builder_ret_void(self.raw) }
     }
 }
 
 impl<'a, 'b: 'a> Drop for Builder<'a, 'b> {
     fn drop(&mut self) {
-        unsafe { LLVMDisposeBuilder(self.raw) };
+        unsafe { llvm_builder_dispose(self.raw) };
     }
 }

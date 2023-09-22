@@ -1,10 +1,7 @@
 use crate::ast::ParseError;
+use crate::ffi::llvm_init;
 use crate::project::{Project, ProjectBuildError, ProjectLoadError};
 use clap::{command, value_parser, Arg, ArgMatches, Command};
-use llvm_sys::target::{
-    LLVM_InitializeAllAsmPrinters, LLVM_InitializeAllTargetInfos, LLVM_InitializeAllTargetMCs,
-    LLVM_InitializeAllTargets,
-};
 use std::error::Error;
 use std::fmt::Write;
 use std::path::PathBuf;
@@ -12,6 +9,7 @@ use std::process::ExitCode;
 
 mod ast;
 mod codegen;
+mod ffi;
 mod lexer;
 mod pkg;
 mod project;
@@ -39,12 +37,7 @@ fn main() -> ExitCode {
 
 fn build(args: &ArgMatches) -> ExitCode {
     // Initialize LLVM.
-    unsafe {
-        LLVM_InitializeAllTargetInfos();
-        LLVM_InitializeAllTargets();
-        LLVM_InitializeAllTargetMCs();
-        LLVM_InitializeAllAsmPrinters();
-    }
+    unsafe { llvm_init() };
 
     // Open the project.
     let path = args.get_one::<PathBuf>("path").unwrap();

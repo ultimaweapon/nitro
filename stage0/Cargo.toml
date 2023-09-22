@@ -6,7 +6,6 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.4", features = ["cargo"] }
-llvm-sys = { version = "170", features = ["strict-versioning"] }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
 toml = "0.8"

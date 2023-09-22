@@ -1,29 +1,28 @@
 use super::Codegen;
-use llvm_sys::core::{LLVMCreateBasicBlockInContext, LLVMDeleteBasicBlock};
-use llvm_sys::prelude::LLVMBasicBlockRef;
+use crate::ffi::{llvm_block_dispose, llvm_block_new};
 use std::marker::PhantomData;
 
 /// Encapsulate an LLVM basic block.
 pub struct BasicBlock<'a, 'b: 'a> {
-    value: LLVMBasicBlockRef,
+    value: *mut crate::ffi::LlvmBlock,
     phantom: PhantomData<&'a Codegen<'b>>,
 }
 
 impl<'a, 'b: 'a> BasicBlock<'a, 'b> {
     pub fn new(cx: &'a Codegen<'b>) -> Self {
         Self {
-            value: unsafe { LLVMCreateBasicBlockInContext(cx.llvm, b"\0".as_ptr() as _) },
+            value: unsafe { llvm_block_new(cx.llvm) },
             phantom: PhantomData,
         }
     }
 
-    pub fn as_raw(&self) -> LLVMBasicBlockRef {
+    pub fn as_raw(&self) -> *mut crate::ffi::LlvmBlock {
         self.value
     }
 }
 
 impl<'a, 'b: 'a> Drop for BasicBlock<'a, 'b> {
     fn drop(&mut self) {
-        unsafe { LLVMDeleteBasicBlock(self.value) };
+        unsafe { llvm_block_dispose(self.value) };
     }
 }
