@@ -35,9 +35,9 @@ impl Function {
         cx: &'a Codegen<'b>,
         container: &str,
     ) -> Result<Option<LlvmFunc<'a, 'b>>, SyntaxError> {
-        // Check cfg attribute.
-        if let Some((_, cfg)) = self.attrs.config() {
-            if !cx.run_cfg(cfg)? {
+        // Check condition.
+        if let Some((_, cond)) = self.attrs.condition() {
+            if !cx.check_condition(cond)? {
                 return Ok(None);
             }
         }

@@ -4,17 +4,17 @@ class Allocator;
 impl Allocator {
     @pub
     fn Alloc(size: UInt, align: UInt): *UInt8 {
-        @cfg(unix)
+        @if(unix)
         let ptr = aligned_alloc(align, size);
 
-        @cfg(win32)
+        @if(win32)
         let ptr = _aligned_malloc(size, align);
 
         if ptr == null {
-            @cfg(os != "windows")
+            @if(os != "windows")
             abort();
 
-            @cfg(os == "windows")
+            @if(os == "windows")
             asm("int 0x29", in("ecx") 7, out(!) _);
         }
 
@@ -23,30 +23,30 @@ impl Allocator {
 
     @pub
     fn Free(ptr: *UInt8) {
-        @cfg(unix)
+        @if(unix)
         free(ptr);
 
-        @cfg(win32)
+        @if(win32)
         _aligned_free(ptr);
     }
 
-    @cfg(unix)
+    @if(unix)
     @ext(C)
     fn aligned_alloc(align: UInt, size: UInt): *UInt8;
 
-    @cfg(unix)
+    @if(unix)
     @ext(C)
     fn free(ptr: *UInt8);
 
-    @cfg(win32)
+    @if(win32)
     @ext(C)
     fn _aligned_malloc(size: UInt, align: UInt): *UInt8;
 
-    @cfg(win32)
+    @if(win32)
     @ext(C)
     fn _aligned_free(ptr: *UInt8);
 
-    @cfg(unix)
+    @if(unix)
     @ext(C)
     fn abort(): !;
 }

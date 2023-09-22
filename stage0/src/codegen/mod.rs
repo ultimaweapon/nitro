@@ -95,9 +95,9 @@ impl<'a> Codegen<'a> {
         unsafe { llvm_layout_pointer_size(self.layout) }
     }
 
-    pub fn run_cfg(&self, expr: &[Expression]) -> Result<bool, SyntaxError> {
+    pub fn check_condition(&self, cond: &[Expression]) -> Result<bool, SyntaxError> {
         // Get first expression.
-        let mut expr = expr.iter();
+        let mut expr = cond.iter();
         let lhs = match expr.next().unwrap() {
             Expression::Value(v) => v,
             e => return Err(SyntaxError::new(e.span(), "expect an identifier")),

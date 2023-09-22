@@ -5,7 +5,7 @@ use crate::lexer::{AttributeName, Lexer, SyntaxError, Token};
 #[derive(Default)]
 pub struct Attributes {
     public: Option<AttributeName>,
-    config: Option<(AttributeName, Vec<Expression>)>,
+    condition: Option<(AttributeName, Vec<Expression>)>,
     ext: Option<(AttributeName, Extern)>,
     repr: Option<(AttributeName, Representation)>,
     customs: Vec<(AttributeName, Option<Vec<Vec<Expression>>>)>,
@@ -16,7 +16,7 @@ impl Attributes {
         // Parse the first attribute.
         let mut attrs = Self {
             public: None,
-            config: None,
+            condition: None,
             ext: None,
             repr: None,
             customs: Vec::new(),
@@ -44,8 +44,8 @@ impl Attributes {
         Ok(attrs)
     }
 
-    pub fn config(&self) -> Option<&(AttributeName, Vec<Expression>)> {
-        self.config.as_ref()
+    pub fn condition(&self) -> Option<&(AttributeName, Vec<Expression>)> {
+        self.condition.as_ref()
     }
 
     pub fn ext(&self) -> Option<&(AttributeName, Extern)> {
@@ -58,20 +58,6 @@ impl Attributes {
 
     fn parse_single(&mut self, lex: &mut Lexer, name: AttributeName) -> Result<(), SyntaxError> {
         match name.value() {
-            "cfg" => {
-                // Check for multiple cfg.
-                if self.config.is_some() {
-                    return Err(SyntaxError::new(
-                        name.span().clone(),
-                        "multiple cfg attribute is not allowed",
-                    ));
-                }
-
-                // Parse argument.
-                lex.next_op()?;
-                self.config = Some((name, Expression::parse(lex)?));
-                lex.next_cp()?;
-            }
             "ext" => {
                 // Check for multiple ext.
                 if self.ext.is_some() {
@@ -93,6 +79,20 @@ impl Attributes {
                         _ => return Err(SyntaxError::new(ext.span().clone(), "unknown extern")),
                     },
                 ));
+            }
+            "if" => {
+                // Check for multiple if.
+                if self.condition.is_some() {
+                    return Err(SyntaxError::new(
+                        name.span().clone(),
+                        "multiple if attribute is not allowed",
+                    ));
+                }
+
+                // Parse argument.
+                lex.next_op()?;
+                self.condition = Some((name, Expression::parse(lex)?));
+                lex.next_cp()?;
             }
             "pub" => {
                 // Check for multiple pub.
