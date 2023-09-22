@@ -1,5 +1,6 @@
 use std::ffi::c_char;
 
+#[allow(improper_ctypes)]
 extern "C" {
     pub fn llvm_init();
     pub fn llvm_target_lookup(triple: *const c_char, err: &mut String) -> *const LlvmTarget;
@@ -30,6 +31,7 @@ extern "C" {
     ) -> *mut LlvmFunction;
     pub fn llvm_type_void(cx: *mut LlvmContext) -> *mut LlvmType;
     pub fn llvm_type_int8(cx: *mut LlvmContext) -> *mut LlvmInteger;
+    pub fn llvm_type_int32(cx: *mut LlvmContext) -> *mut LlvmInteger;
     pub fn llvm_type_int64(cx: *mut LlvmContext) -> *mut LlvmInteger;
     pub fn llvm_type_ptr(cx: *mut LlvmContext) -> *mut LlvmPointer;
     pub fn llvm_type_func(
@@ -44,12 +46,15 @@ extern "C" {
         name: *const c_char,
     ) -> *mut LlvmFunction;
     pub fn llvm_function_append(f: *mut LlvmFunction, bb: *mut LlvmBlock);
+    pub fn llvm_function_set_stdcall(f: *mut LlvmFunction);
+    pub fn llvm_integer_const(ty: *mut LlvmInteger, val: u64, sign: bool) -> *mut LlvmConstInt;
     pub fn llvm_block_new(cx: *mut LlvmContext) -> *mut LlvmBlock;
     pub fn llvm_block_dispose(bb: *mut LlvmBlock);
     pub fn llvm_builder_new(cx: *mut LlvmContext) -> *mut LlvmBuilder;
     pub fn llvm_builder_dispose(ib: *mut LlvmBuilder);
     pub fn llvm_builder_append_block(ib: *mut LlvmBuilder, bb: *mut LlvmBlock);
     pub fn llvm_builder_ret_void(ib: *mut LlvmBuilder) -> *mut LlvmReturn;
+    pub fn llvm_builder_ret(ib: *mut LlvmBuilder, v: *mut LlvmValue) -> *mut LlvmReturn;
 }
 
 pub struct LlvmTarget(());
@@ -61,7 +66,9 @@ pub struct LlvmType(());
 pub struct LlvmInteger(());
 pub struct LlvmPointer(());
 pub struct LlvmPrototype(());
+pub struct LlvmValue(());
 pub struct LlvmFunction(());
+pub struct LlvmConstInt(());
 pub struct LlvmBlock(());
 pub struct LlvmBuilder(());
 pub struct LlvmReturn(());

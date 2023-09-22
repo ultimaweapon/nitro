@@ -206,7 +206,7 @@ impl Project {
         // Build the object file.
         let obj = outputs.join(format!("{}.o", self.meta.package.name));
 
-        if let Err(e) = cx.build(&obj) {
+        if let Err(e) = cx.build(&obj, false) {
             return Err(ProjectBuildError::BuildFailed(obj, e));
         }
 

@@ -17,6 +17,7 @@ add_library(ffi STATIC
     llvm_builder.cpp
     llvm_context.cpp
     llvm_function.cpp
+    llvm_integer.cpp
     llvm_layout.cpp
     llvm_module.cpp
     llvm_target.cpp

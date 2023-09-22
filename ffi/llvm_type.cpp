@@ -13,6 +13,11 @@ extern "C" IntegerType *llvm_type_int8(LLVMContext *cx)
     return Type::getInt8Ty(*cx);
 }
 
+extern "C" IntegerType *llvm_type_int32(LLVMContext *cx)
+{
+    return Type::getInt32Ty(*cx);
+}
+
 extern "C" IntegerType *llvm_type_int64(LLVMContext *cx)
 {
     return Type::getInt64Ty(*cx);

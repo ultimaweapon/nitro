@@ -223,7 +223,12 @@ impl<'a> Codegen<'a> {
         Some(ty)
     }
 
-    pub fn build<F: AsRef<std::path::Path>>(self, file: F) -> Result<(), BuildError> {
+    pub fn build<F: AsRef<std::path::Path>>(self, file: F, exe: bool) -> Result<(), BuildError> {
+        // Generate DllMain for DLL on Windows.
+        if self.target.os() == OperatingSystem::Win32 && !exe {
+            self.build_dll_main()?;
+        }
+
         // TODO: Invoke LLVMVerifyModule.
         let mut err = String::new();
         let file = file.as_ref().to_str().unwrap();
@@ -234,6 +239,32 @@ impl<'a> Codegen<'a> {
         } else {
             Ok(())
         }
+    }
+
+    fn build_dll_main(&self) -> Result<(), BuildError> {
+        // Build parameter list.
+        let params = [
+            LlvmType::Ptr(LlvmPtr::new(self, LlvmType::Void(LlvmVoid::new(self)))),
+            LlvmType::U32(LlvmU32::new(self)),
+            LlvmType::Ptr(LlvmPtr::new(self, LlvmType::Void(LlvmVoid::new(self)))),
+        ];
+
+        // Create a function.
+        let name = CStr::from_bytes_with_nul(b"_DllMainCRTStartup\0").unwrap();
+        let ret = LlvmType::I32(LlvmI32::new(self));
+        let mut func = LlvmFunc::new(self, name, &params, ret);
+
+        func.set_stdcall();
+
+        // Build body.
+        let mut body = BasicBlock::new(self);
+        let mut b = Builder::new(self, &mut body);
+
+        b.ret(LlvmI32::new(self).get_const(1) as _);
+
+        func.append(body);
+
+        Ok(())
     }
 
     fn build_project_type(&self, name: &str, ty: &SourceFile) -> LlvmType<'_, 'a> {

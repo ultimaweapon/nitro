@@ -21,3 +21,8 @@ extern "C" ReturnInst *llvm_builder_ret_void(IRBuilder<> *ib)
 {
     return ib->CreateRetVoid();
 }
+
+extern "C" ReturnInst *llvm_builder_ret(IRBuilder<> *ib, Value *v)
+{
+    return ib->CreateRet(v);
+}

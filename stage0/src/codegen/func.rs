@@ -1,6 +1,7 @@
 use super::{BasicBlock, Codegen, LlvmType};
 use crate::ffi::{
-    llvm_function_append, llvm_function_new, llvm_module_get_function, llvm_type_func,
+    llvm_function_append, llvm_function_new, llvm_function_set_stdcall, llvm_module_get_function,
+    llvm_type_func,
 };
 use std::ffi::CStr;
 use std::marker::PhantomData;
@@ -46,5 +47,9 @@ impl<'a, 'b: 'a> LlvmFunc<'a, 'b> {
     pub fn append(&mut self, block: BasicBlock<'a, 'b>) {
         unsafe { llvm_function_append(self.value, block.as_raw()) };
         forget(block);
+    }
+
+    pub fn set_stdcall(&mut self) {
+        unsafe { llvm_function_set_stdcall(self.value) };
     }
 }
