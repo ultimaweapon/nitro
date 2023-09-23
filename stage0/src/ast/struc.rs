@@ -22,6 +22,13 @@ impl Struct {
         def.span()
     }
 
+    pub fn attrs(&self) -> &Attributes {
+        match self {
+            Self::Primitive(a, _, _, _) => a,
+            Self::Composite(a, _, _) => a,
+        }
+    }
+
     pub fn name(&self) -> &Identifier {
         match self {
             Self::Primitive(_, _, _, i) => i,

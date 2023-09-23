@@ -552,6 +552,13 @@ pub enum TypeDefinition {
 }
 
 impl TypeDefinition {
+    pub fn attrs(&self) -> &Attributes {
+        match self {
+            Self::Struct(v) => v.attrs(),
+            Self::Class(v) => v.attrs(),
+        }
+    }
+
     pub fn name(&self) -> &Identifier {
         match self {
             Self::Struct(v) => v.name(),

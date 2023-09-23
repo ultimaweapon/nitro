@@ -1,5 +1,5 @@
 use super::Attributes;
-use crate::lexer::{ClassKeyword, Identifier, Span};
+use crate::lexer::{ClassKeyword, Identifier};
 
 /// A class.
 ///
@@ -16,8 +16,8 @@ impl Class {
         Self { attrs, def, name }
     }
 
-    pub fn span(&self) -> &Span {
-        self.def.span()
+    pub fn attrs(&self) -> &Attributes {
+        &self.attrs
     }
 
     pub fn name(&self) -> &Identifier {

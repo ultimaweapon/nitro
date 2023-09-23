@@ -1,3 +1,6 @@
+use super::ExportedType;
+use std::collections::HashSet;
+
 /// Contains information about a Nitro library.
 ///
 /// A Nitro library is always a shared library. Nitro can consume a static library but cannot
@@ -11,10 +14,18 @@
 ///
 /// There will be two states of `foo` here, which likely to cause a headache to Alice to figure out
 /// what wrong with `foo` when Carlos report something is not working.
-pub struct Library {}
+pub struct Library {
+    types: HashSet<ExportedType>,
+}
 
 impl Library {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            types: HashSet::new(),
+        }
+    }
+
+    pub fn add_type(&mut self, ty: ExportedType) {
+        assert!(self.types.insert(ty));
     }
 }

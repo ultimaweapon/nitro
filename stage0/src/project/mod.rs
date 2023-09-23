@@ -1,10 +1,12 @@
 pub use self::meta::*;
 
-use crate::ast::{ParseError, SourceFile};
+use crate::ast::{ParseError, Public, SourceFile};
 use crate::codegen::{BuildError, Codegen, TypeResolver};
 use crate::dep::DepResolver;
 use crate::lexer::SyntaxError;
-use crate::pkg::{Architecture, Library, OperatingSystem, Package, PackageMeta, Target};
+use crate::pkg::{
+    Architecture, ExportedType, Library, OperatingSystem, Package, PackageMeta, Target,
+};
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
@@ -189,8 +191,35 @@ impl<'a> Project<'a> {
             resolver,
         );
 
-        // Compile the sources.
+        // Enumerate the sources.
+        let mut lib = Library::new();
+
         for (fqtn, src) in &self.sources {
+            // Check type condition.
+            let ty = src.ty().unwrap();
+            let attrs = ty.attrs();
+
+            if let Some((_, cond)) = attrs.condition() {
+                match cx.check_condition(cond) {
+                    Ok(v) => {
+                        if !v {
+                            continue;
+                        }
+                    }
+                    Err(e) => {
+                        return Err(ProjectBuildError::InvalidSyntax(src.path().to_owned(), e));
+                    }
+                }
+            }
+
+            // Check if the type is public.
+            let mut exp = ty
+                .attrs()
+                .public()
+                .filter(|(_, p)| *p == Public::External)
+                .map(|_| ExportedType::new(fqtn.clone()));
+
+            // Compile implementations.
             cx.set_namespace(match fqtn.rfind('.') {
                 Some(i) => &fqtn[..i],
                 None => "",
@@ -205,6 +234,11 @@ impl<'a> Project<'a> {
                         }
                     };
                 }
+            }
+
+            // Export the type.
+            if let Some(v) = exp {
+                lib.add_type(v);
             }
         }
 
@@ -273,7 +307,7 @@ impl<'a> Project<'a> {
 
         Ok(BuildOutputs {
             exe: None,
-            lib: Some((out, Library::new())),
+            lib: Some((out, lib)),
         })
     }
 

@@ -4,7 +4,7 @@ use crate::lexer::{AttributeName, Lexer, SyntaxError, Token};
 /// A collection of attributes.
 #[derive(Default)]
 pub struct Attributes {
-    public: Option<AttributeName>,
+    public: Option<(AttributeName, Public)>,
     condition: Option<(AttributeName, Vec<Expression>)>,
     ext: Option<(AttributeName, Extern)>,
     repr: Option<(AttributeName, Representation)>,
@@ -42,6 +42,10 @@ impl Attributes {
         }
 
         Ok(attrs)
+    }
+
+    pub fn public(&self) -> Option<&(AttributeName, Public)> {
+        self.public.as_ref()
     }
 
     pub fn condition(&self) -> Option<&(AttributeName, Vec<Expression>)> {
@@ -106,14 +110,14 @@ impl Attributes {
                 // Parse argument.
                 self.public = Some(match lex.next()? {
                     Some(Token::OpenParenthesis(_)) => match lex.next()? {
-                        Some(Token::CloseParenthesis(_)) => name,
+                        Some(Token::CloseParenthesis(_)) => (name, Public::External),
                         _ => todo!(),
                     },
                     Some(_) => {
                         lex.undo();
-                        name
+                        (name, Public::External)
                     }
-                    None => name,
+                    None => (name, Public::External),
                 });
             }
             "repr" => {
@@ -168,6 +172,12 @@ impl Attributes {
 
         Ok(())
     }
+}
+
+/// Argument of `@pub`.
+#[derive(PartialEq, Eq)]
+pub enum Public {
+    External,
 }
 
 /// Argument of `@ext`.
