@@ -6,15 +6,15 @@
       "group": "build",
       "type": "shell",
       "linux": {
-        "command": "${workspaceFolder}/build-nitro.sh",
+        "command": "${workspaceFolder}/build-cli.sh",
         "args": ["debug"]
       },
       "osx": {
-        "command": "${workspaceFolder}/build-nitro.sh",
+        "command": "${workspaceFolder}/build-cli.sh",
         "args": ["debug"]
       },
       "windows": {
-        "command": "${workspaceFolder}/build-nitro.ps1",
+        "command": "${workspaceFolder}/build-cli.ps1",
         "args": ["-Type", "debug"]
       }
     }
