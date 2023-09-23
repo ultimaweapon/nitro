@@ -133,6 +133,7 @@ impl Attributes {
                 self.repr = Some((
                     name,
                     match repr.value() {
+                        "i32" => Representation::I32,
                         "u8" => Representation::U8,
                         "un" => Representation::Un,
                         _ => {
@@ -177,6 +178,7 @@ pub enum Extern {
 /// Argument of `@repr`
 #[derive(Clone, Copy)]
 pub enum Representation {
+    I32,
     U8,
     Un,
 }

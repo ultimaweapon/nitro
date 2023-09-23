@@ -1,0 +1,3 @@
+@pub
+@repr(i32)
+struct Int32;

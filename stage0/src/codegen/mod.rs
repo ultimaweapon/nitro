@@ -277,6 +277,7 @@ impl<'a> Codegen<'a> {
     fn build_project_struct(&self, name: &str, ty: &Struct) -> LlvmType<'_, 'a> {
         match ty {
             Struct::Primitive(_, r, _, _) => match r {
+                Representation::I32 => LlvmType::I32(LlvmI32::new(self)),
                 Representation::U8 => LlvmType::U8(LlvmU8::new(self)),
                 Representation::Un => match self.pointer_size() {
                     8 => LlvmType::U64(LlvmU64::new(self)),
