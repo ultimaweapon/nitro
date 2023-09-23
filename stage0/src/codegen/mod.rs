@@ -36,7 +36,7 @@ pub struct Codegen<'a> {
     version: &'a PackageVersion,
     target: &'a Target,
     namespace: &'a str,
-    resolver: &'a Resolver<'a>,
+    resolver: &'a TypeResolver<'a>,
 }
 
 impl<'a> Codegen<'a> {
@@ -45,7 +45,7 @@ impl<'a> Codegen<'a> {
         version: &'a PackageVersion,
         target: &'a Target,
         module: M,
-        resolver: &'a Resolver<'a>,
+        resolver: &'a TypeResolver<'a>,
     ) -> Self
     where
         M: AsRef<CStr>,

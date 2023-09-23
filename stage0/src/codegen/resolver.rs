@@ -3,11 +3,11 @@ use crate::pkg::ExportedType;
 use std::collections::HashMap;
 
 /// An object to resolve types.
-pub struct Resolver<'a> {
+pub struct TypeResolver<'a> {
     types: HashMap<String, ResolvedType<'a>>,
 }
 
-impl<'a> Resolver<'a> {
+impl<'a> TypeResolver<'a> {
     pub fn new() -> Self {
         Self {
             types: HashMap::new(),

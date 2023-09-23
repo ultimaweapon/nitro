@@ -3,6 +3,7 @@ pub use self::meta::*;
 pub use self::target::*;
 pub use self::ty::*;
 
+use crate::dep::DepResolver;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -40,6 +41,13 @@ impl Package {
         todo!()
     }
 
+    pub fn export<T>(&self, to: T, resolver: &mut DepResolver) -> Result<(), PackageExportError>
+    where
+        T: AsRef<Path>,
+    {
+        todo!()
+    }
+
     pub fn unpack<F, T>(file: F, to: T) -> Result<(), PackageUnpackError>
     where
         F: AsRef<Path>,
@@ -56,6 +64,10 @@ pub enum PackageOpenError {}
 /// Represents an error when a package is failed to pack.
 #[derive(Debug, Error)]
 pub enum PackagePackError {}
+
+/// Represents an error when a package is failed to export.
+#[derive(Debug, Error)]
+pub enum PackageExportError {}
 
 /// Represents an error when a package is failed to unpack.
 #[derive(Debug, Error)]

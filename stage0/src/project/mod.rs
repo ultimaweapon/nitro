@@ -1,11 +1,12 @@
 pub use self::meta::*;
 
 use crate::ast::{ParseError, SourceFile};
-use crate::codegen::{BuildError, Codegen, Resolver};
+use crate::codegen::{BuildError, Codegen, TypeResolver};
+use crate::dep::DepResolver;
 use crate::lexer::SyntaxError;
 use crate::pkg::{Architecture, Library, OperatingSystem, Package, PackageMeta, Target};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::ffi::{c_char, CStr, CString};
 use std::fmt::{Display, Formatter};
@@ -17,14 +18,18 @@ use thiserror::Error;
 mod meta;
 
 /// A Nitro project.
-pub struct Project {
+pub struct Project<'a> {
     path: PathBuf,
     meta: ProjectMeta,
-    sources: BTreeMap<String, SourceFile>,
+    sources: HashMap<String, SourceFile>,
+    resolver: &'a mut DepResolver,
 }
 
-impl Project {
-    pub fn open<P: Into<PathBuf>>(path: P) -> Result<Self, ProjectOpenError> {
+impl<'a> Project<'a> {
+    pub fn open<P: Into<PathBuf>>(
+        path: P,
+        resolver: &'a mut DepResolver,
+    ) -> Result<Self, ProjectOpenError> {
         // Read the project.
         let path = path.into();
         let project = path.join(".nitro");
@@ -42,12 +47,21 @@ impl Project {
         Ok(Self {
             path,
             meta,
-            sources: BTreeMap::new(),
+            sources: HashMap::new(),
+            resolver,
         })
     }
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn artifacts(&self) -> PathBuf {
+        self.path.join(".build")
+    }
+
+    pub fn meta(&self) -> &ProjectMeta {
+        &self.meta
     }
 
     pub fn load(&mut self) -> Result<(), ProjectLoadError> {
@@ -95,7 +109,7 @@ impl Project {
 
     pub fn build(&self) -> Result<Package, ProjectBuildError> {
         // Setup type resolver.
-        let mut resolver: Resolver<'_> = Resolver::new();
+        let mut resolver = TypeResolver::new();
 
         resolver.populate_project_types(&self.sources);
 
@@ -116,8 +130,8 @@ impl Project {
         }
 
         // Setup metadata.
-        let pkg = &self.meta.package;
-        let meta = PackageMeta::new(pkg.name.clone(), pkg.version.clone());
+        let pkg = self.meta.package();
+        let meta = PackageMeta::new(pkg.name().to_owned(), pkg.version().clone());
 
         Ok(Package::new(meta, exes, libs))
     }
@@ -163,15 +177,15 @@ impl Project {
     fn build_for(
         &self,
         target: &Target,
-        resolver: &Resolver<'_>,
+        resolver: &TypeResolver<'_>,
     ) -> Result<BuildOutputs, ProjectBuildError> {
         // Setup codegen context.
-        let pkg = &self.meta.package;
+        let pkg = self.meta.package();
         let mut cx = Codegen::new(
-            &pkg.name,
-            &pkg.version,
+            pkg.name(),
+            pkg.version(),
             &target,
-            CString::new(pkg.name.as_str()).unwrap(),
+            CString::new(pkg.name()).unwrap(),
             resolver,
         );
 
@@ -195,16 +209,16 @@ impl Project {
         }
 
         // Create output directory.
-        let mut outputs = self.path.join(".build");
+        let mut dir = self.artifacts();
 
-        outputs.push(target.to_llvm());
+        dir.push(target.to_llvm());
 
-        if let Err(e) = create_dir_all(&outputs) {
-            return Err(ProjectBuildError::CreateDirectoryFailed(outputs, e));
+        if let Err(e) = create_dir_all(&dir) {
+            return Err(ProjectBuildError::CreateDirectoryFailed(dir, e));
         }
 
         // Build the object file.
-        let obj = outputs.join(format!("{}.o", self.meta.package.name));
+        let obj = dir.join(format!("{}.o", self.meta.package().name()));
 
         if let Err(e) = cx.build(&obj, false) {
             return Err(ProjectBuildError::BuildFailed(obj, e));
@@ -212,9 +226,9 @@ impl Project {
 
         // Prepare to link.
         let mut args: Vec<Cow<'static, str>> = Vec::new();
-        let out = outputs.join(format!(
+        let out = dir.join(format!(
             "{}.{}",
-            self.meta.package.name,
+            pkg.name(),
             match target.os() {
                 OperatingSystem::Darwin => "dylib",
                 OperatingSystem::Linux => "so",
