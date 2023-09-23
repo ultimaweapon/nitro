@@ -23,6 +23,7 @@ jobs:
             echo "key=linux-llvm-$hash" >> $GITHUB_OUTPUT
           deps: ./build-deps.sh
           build: ./build-nitro.sh
+          dist: ./build-dist.sh
           artifact: nitro-linux-x86_64
         - os: macos-latest
           parallel: 3
@@ -34,6 +35,7 @@ jobs:
             echo "key=mac-llvm-$hash" >> $GITHUB_OUTPUT
           deps: ./build-deps.sh
           build: ./build-nitro.sh
+          dist: ./build-dist.sh
           artifact: nitro-mac-x86_64
         - os: windows-latest
           parallel: 2
@@ -46,6 +48,7 @@ jobs:
             echo "key=win-llvm-$hash" >> $env:GITHUB_OUTPUT
           deps: .\build-deps.ps1
           build: .\build-nitro.ps1
+          dist: .\build-dist.ps1
           artifact: nitro-win-x86_64
     runs-on: ${{ matrix.os }}
     env:
@@ -66,6 +69,8 @@ jobs:
       run: ${{ matrix.deps }}
     - name: Build Nitro
       run: ${{ matrix.build }}
+    - name: Build distribution
+      run: ${{ matrix.dist }}
     - name: Cache LLVM
       uses: actions/cache/save@v3
       with:

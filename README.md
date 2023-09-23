@@ -147,6 +147,20 @@ Supply `debug` as a first argument if you want to hack on Nitro.
 
 Set parameter `Type` to `debug` if you want to hack on Nitro (e.g. `.\build-nitro.ps1 -Type debug`).
 
+### Build distribution
+
+#### Linux and macOS
+
+```sh
+./build-dist.sh
+```
+
+#### Windows
+
+```powershell
+.\build-dist.ps1
+```
+
 ## License
 
 BSD-2-Clause Plus Patent License
