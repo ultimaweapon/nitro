@@ -1,12 +1,29 @@
 {
   "configurations": [
     {
-      "name": "Nitro",
+      "name": "Build",
       "type": "lldb",
       "request": "launch",
       "program": "${workspaceFolder}/dist/bin/nitro",
       "args": [
         "build",
+        "${workspaceFolder}/std"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "RUST_BACKTRACE": "1"
+      },
+      "preLaunchTask": "build"
+    },
+    {
+      "name": "Export",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/dist/bin/nitro",
+      "args": [
+        "build",
+        "--export",
+        "${workspaceFolder}/dist/share/nitro",
         "${workspaceFolder}/std"
       ],
       "cwd": "${workspaceFolder}",

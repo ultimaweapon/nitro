@@ -5,6 +5,8 @@ pub use self::ty::*;
 
 use crate::dep::DepResolver;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -38,7 +40,18 @@ impl Package {
     }
 
     pub fn pack<F: AsRef<Path>>(&self, file: F) -> Result<(), PackagePackError> {
-        todo!()
+        // Create a package file.
+        let path = file.as_ref();
+        let mut file = match File::create(path) {
+            Ok(v) => v,
+            Err(e) => return Err(PackagePackError::CreateFileFailed(e)),
+        };
+
+        // Write file magic.
+        file.write_all(b"\x7FNPK")
+            .map_err(|e| PackagePackError::WriteFailed(e))?;
+
+        Ok(())
     }
 
     pub fn export<T>(&self, to: T, resolver: &mut DepResolver) -> Result<(), PackageExportError>
@@ -63,7 +76,13 @@ pub enum PackageOpenError {}
 
 /// Represents an error when a package is failed to pack.
 #[derive(Debug, Error)]
-pub enum PackagePackError {}
+pub enum PackagePackError {
+    #[error("cannot create the specified file")]
+    CreateFileFailed(#[source] std::io::Error),
+
+    #[error("cannot write the specified file")]
+    WriteFailed(#[source] std::io::Error),
+}
 
 /// Represents an error when a package is failed to export.
 #[derive(Debug, Error)]
