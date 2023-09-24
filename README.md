@@ -1,6 +1,6 @@
 # Nitro
 
-Nitro is an experimental OOP language inspired by Rust with the following goals:
+Nitro is an experimental OOP language with the following goals:
 
 - Compiled to native code.
 - [Non-fragile](https://en.wikipedia.org/wiki/Fragile_binary_interface_problem) and stable ABI.
@@ -21,8 +21,6 @@ Nitro borrowed most of the syntax from Rust except:
 - Use exception like Java or C# for error handling (no checked exception).
 - Nitro was designed for application programming rather than systems programming.
 
-The goal of Nitro is to be a modern OOP language with the productivity of Rust syntax.
-
 ## Different from Java or C#
 
 The main different is Nitro compiled to native code instead of Java bytecode or Common Intermediate
@@ -32,6 +30,13 @@ Language, which can be run without a VM. The benefit with this are:
 - Fast startup.
 - Can be run on a client machine directly without a VM.
 - Easy to interop with other languages.
+
+## Different from Swift and D
+
+The reason Nitro was born is because of:
+
+- D has fragile ABI.
+- Swift does not support namespace.
 
 ## Current state
 
@@ -47,18 +52,18 @@ class Allocator;
 
 impl Allocator {
     @pub
-    fn Alloc(size: usize, align: usize): *u8 {
-        @cfg(unix)
+    fn Alloc(size: UInt, align: UInt): *UInt8 {
+        @if(unix)
         let ptr = aligned_alloc(align, size);
 
-        @cfg(windows)
+        @if(win32)
         let ptr = _aligned_malloc(size, align);
 
         if ptr == null {
-            @cfg(os != "windows")
+            @if(os != "windows")
             abort();
 
-            @cfg(os == "windows")
+            @if(os == "windows")
             asm("int 0x29", in("ecx") 7, out(!) _);
         }
 
@@ -66,31 +71,31 @@ impl Allocator {
     }
 
     @pub
-    fn Free(ptr: *u8) {
-        @cfg(unix)
+    fn Free(ptr: *UInt8) {
+        @if(unix)
         free(ptr);
 
-        @cfg(windows)
+        @if(win32)
         _aligned_free(ptr);
     }
 
-    @cfg(unix)
+    @if(unix)
     @ext(C)
-    fn aligned_alloc(align: usize, size: usize): *u8;
+    fn aligned_alloc(align: UInt, size: UInt): *UInt8;
 
-    @cfg(unix)
+    @if(unix)
     @ext(C)
-    fn free(ptr: *u8);
+    fn free(ptr: *UInt8);
 
-    @cfg(windows)
+    @if(win32)
     @ext(C)
-    fn _aligned_malloc(size: usize, align: usize): *u8;
+    fn _aligned_malloc(size: UInt, align: UInt): *UInt8;
 
-    @cfg(windows)
+    @if(win32)
     @ext(C)
-    fn _aligned_free(ptr: *u8);
+    fn _aligned_free(ptr: *UInt8);
 
-    @cfg(unix)
+    @if(unix)
     @ext(C)
     fn abort(): !;
 }
