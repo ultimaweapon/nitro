@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use thiserror::Error;
 
 mod lib;
@@ -25,6 +26,11 @@ pub struct Package {
 }
 
 impl Package {
+    const META_END: u8 = 0;
+    const META_NAME: u8 = 1;
+    const META_VERSION: u8 = 2;
+    const META_DATE: u8 = 3;
+
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, PackageOpenError> {
         todo!()
     }
@@ -50,6 +56,33 @@ impl Package {
         // Write file magic.
         file.write_all(b"\x7FNPK")
             .map_err(|e| PackagePackError::WriteFailed(e))?;
+
+        // Write package name.
+        let meta = &self.meta;
+
+        file.write_all(&[Self::META_NAME]).unwrap();
+        file.write_all(&meta.name().to_bin()).unwrap();
+
+        // Write package version.
+        file.write_all(&[Self::META_VERSION]).unwrap();
+        file.write_all(&meta.version().to_bin().to_be_bytes())
+            .unwrap();
+
+        // Write created date.
+        let date = SystemTime::now();
+
+        file.write_all(&[Self::META_DATE]).unwrap();
+        file.write_all(
+            &date
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                .to_be_bytes(),
+        )
+        .unwrap();
+
+        // End of meta data.
+        file.write_all(&[Self::META_END]).unwrap();
 
         Ok(())
     }

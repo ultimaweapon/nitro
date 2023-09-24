@@ -133,7 +133,7 @@ impl<'a> Project<'a> {
 
         // Setup metadata.
         let pkg = self.meta.package();
-        let meta = PackageMeta::new(pkg.name().to_owned(), pkg.version().clone());
+        let meta = PackageMeta::new(pkg.name().clone(), pkg.version().clone());
 
         Ok(Package::new(meta, exes, libs))
     }
@@ -183,13 +183,7 @@ impl<'a> Project<'a> {
     ) -> Result<BuildOutputs, ProjectBuildError> {
         // Setup codegen context.
         let pkg = self.meta.package();
-        let mut cx = Codegen::new(
-            pkg.name(),
-            pkg.version(),
-            &target,
-            CString::new(pkg.name()).unwrap(),
-            resolver,
-        );
+        let mut cx = Codegen::new(pkg.name(), pkg.version(), &target, resolver);
 
         // Enumerate the sources.
         let mut lib = Library::new();
@@ -252,7 +246,7 @@ impl<'a> Project<'a> {
         }
 
         // Build the object file.
-        let obj = dir.join(format!("{}.o", self.meta.package().name()));
+        let obj = dir.join(format!("{}.o", pkg.name()));
 
         if let Err(e) = cx.build(&obj, false) {
             return Err(ProjectBuildError::BuildFailed(obj, e));

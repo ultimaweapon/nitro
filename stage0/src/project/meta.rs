@@ -1,4 +1,4 @@
-use crate::pkg::PackageVersion;
+use crate::pkg::{PackageName, PackageVersion};
 use serde::Deserialize;
 
 /// Contains information that was loaded from `.nitro` file.
@@ -16,15 +16,15 @@ impl ProjectMeta {
 /// A package table of `.nitro` file.
 #[derive(Deserialize)]
 pub struct ProjectPackage {
-    name: String, // TODO: Only allow identifier.
+    name: PackageName,
     #[serde(rename = "type")]
     ty: ProjectType,
     version: PackageVersion,
 }
 
 impl ProjectPackage {
-    pub fn name(&self) -> &str {
-        self.name.as_ref()
+    pub fn name(&self) -> &PackageName {
+        &self.name
     }
 
     pub fn ty(&self) -> ProjectType {

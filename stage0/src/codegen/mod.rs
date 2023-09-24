@@ -12,7 +12,7 @@ use crate::ffi::{
     llvm_target_lookup,
 };
 use crate::lexer::SyntaxError;
-use crate::pkg::{OperatingSystem, PackageVersion, Target};
+use crate::pkg::{OperatingSystem, PackageName, PackageVersion, Target};
 use std::error::Error;
 use std::ffi::{CStr, CString};
 use std::fmt::{Display, Formatter};
@@ -32,7 +32,7 @@ pub struct Codegen<'a> {
     llvm: *mut crate::ffi::LlvmContext,
     layout: *mut crate::ffi::LlvmLayout,
     machine: *mut crate::ffi::LlvmMachine,
-    pkg: &'a str,
+    pkg: &'a PackageName,
     version: &'a PackageVersion,
     target: &'a Target,
     namespace: &'a str,
@@ -40,18 +40,12 @@ pub struct Codegen<'a> {
 }
 
 impl<'a> Codegen<'a> {
-    pub fn new<M>(
-        pkg: &'a str,
+    pub fn new(
+        pkg: &'a PackageName,
         version: &'a PackageVersion,
         target: &'a Target,
-        module: M,
         resolver: &'a TypeResolver<'a>,
-    ) -> Self
-    where
-        M: AsRef<CStr>,
-    {
-        let module = module.as_ref();
-
+    ) -> Self {
         // Get LLVM target.
         let triple = CString::new(target.to_llvm()).unwrap();
         let llvm = {
@@ -69,7 +63,8 @@ impl<'a> Codegen<'a> {
 
         // Create LLVM module.
         let llvm = unsafe { llvm_context_new() };
-        let module = unsafe { llvm_module_new(llvm, module.as_ptr()) };
+        let name = CString::new(pkg.as_str()).unwrap();
+        let module = unsafe { llvm_module_new(llvm, name.as_ptr()) };
 
         unsafe { llvm_module_set_layout(module, layout) };
 
