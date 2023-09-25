@@ -286,15 +286,11 @@ impl<'a> Project<'a> {
 
         // Prepare to link.
         let mut args: Vec<Cow<'static, str>> = Vec::new();
-        let out = dir.join(format!(
-            "{}.{}",
-            pkg.name(),
-            match target.os() {
-                OperatingSystem::Darwin => "dylib",
-                OperatingSystem::Linux => "so",
-                OperatingSystem::Win32 => "dll",
-            }
-        ));
+        let out = dir.join(match target.os() {
+            OperatingSystem::Darwin => format!("lib{}.dylib", pkg.name()),
+            OperatingSystem::Linux => format!("lib{}.so", pkg.name()),
+            OperatingSystem::Win32 => format!("{}.dll", pkg.name()),
+        });
 
         let linker = match target.os() {
             OperatingSystem::Darwin => {
