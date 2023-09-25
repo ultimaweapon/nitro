@@ -4,7 +4,7 @@ pub use self::func::*;
 pub use self::resolver::*;
 pub use self::ty::*;
 
-use crate::ast::{Expression, Path, Representation, SourceFile, Struct, TypeDefinition, Use};
+use crate::ast::{Expression, Function, Path, TypeName, Use};
 use crate::ffi::{
     llvm_context_dispose, llvm_context_new, llvm_layout_dispose, llvm_layout_new,
     llvm_layout_pointer_size, llvm_module_dispose, llvm_module_new, llvm_module_set_layout,
@@ -12,10 +12,10 @@ use crate::ffi::{
     llvm_target_lookup,
 };
 use crate::lexer::SyntaxError;
-use crate::pkg::{OperatingSystem, PackageName, PackageVersion, Target};
+use crate::pkg::{ExportedType, OperatingSystem, PackageMeta, PackageName, PackageVersion, Target};
 use std::error::Error;
 use std::ffi::{CStr, CString};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Write};
 use std::ptr::null;
 
 mod block;
@@ -155,23 +155,76 @@ impl<'a> Codegen<'a> {
         Ok(res)
     }
 
-    pub fn encode_name(&self, container: &str, name: &str) -> String {
-        // TODO: Create a mangleg name according to Itanium C++ ABI.
-        // https://itanium-cxx-abi.github.io/cxx-abi/abi.html might be useful.
-        if self.version.major() == 0 {
-            format!("{}.{}.{}", self.pkg, container, name)
-        } else {
-            format!(
-                "{}.v{}.{}.{}",
-                self.pkg,
-                self.version.major(),
-                container,
-                name
-            )
+    pub fn mangle(&self, uses: &[Use], ty: &str, mem: &Function) -> Result<String, SyntaxError> {
+        let mut buf = String::new();
+        let pkg = self.pkg.as_str();
+
+        // Package name.
+        write!(buf, "_N{}{}", pkg.len(), pkg).unwrap();
+
+        // Package version.
+        if self.version.major() != 0 {
+            write!(buf, "V{}", self.version.major()).unwrap();
         }
+
+        // Type name.
+        write!(buf, "T").unwrap();
+
+        for p in ty.split('.') {
+            write!(buf, "{}{}", p.len(), p).unwrap();
+        }
+
+        // Function name.
+        let name = mem.name().value();
+
+        write!(buf, "F{}{}", name.len(), name).unwrap();
+        write!(buf, "0").unwrap(); // C calling convention.
+
+        // Return type.
+        match mem.ret() {
+            Some(v) => {
+                for _ in v.prefixes() {
+                    buf.push('P');
+                }
+
+                match v.name() {
+                    TypeName::Unit(_, _) => buf.push('U'),
+                    TypeName::Never(_) => buf.push('N'),
+                    TypeName::Ident(p) => match self.resolve(uses, p) {
+                        Some((n, t)) => match t {
+                            ResolvedType::Project(_) => Self::mangle_self(&mut buf, &n),
+                            ResolvedType::External((p, t)) => Self::mangle_ext(&mut buf, p, t),
+                        },
+                        None => return Err(SyntaxError::new(p.span(), "undefined type")),
+                    },
+                }
+            }
+            None => buf.push('U'),
+        }
+
+        // Parameters.
+        for p in mem.params().iter().map(|p| p.ty()) {
+            for _ in p.prefixes() {
+                buf.push('P');
+            }
+
+            match p.name() {
+                TypeName::Unit(_, _) => buf.push('U'),
+                TypeName::Never(_) => buf.push('N'),
+                TypeName::Ident(p) => match self.resolve(uses, p) {
+                    Some((n, t)) => match t {
+                        ResolvedType::Project(_) => Self::mangle_self(&mut buf, &n),
+                        ResolvedType::External((p, t)) => Self::mangle_ext(&mut buf, p, t),
+                    },
+                    None => return Err(SyntaxError::new(p.span(), "undefined type")),
+                },
+            }
+        }
+
+        Ok(buf)
     }
 
-    pub fn resolve(&self, uses: &[Use], name: &Path) -> Option<LlvmType<'_, 'a>> {
+    pub fn resolve(&self, uses: &[Use], name: &Path) -> Option<(String, &ResolvedType<'a>)> {
         // Resolve full name.
         let name = match name.as_local() {
             Some(name) => {
@@ -209,13 +262,10 @@ impl<'a> Codegen<'a> {
             None => name.to_string(),
         };
 
-        // Resolve type and build LLVM type.
-        let ty = match self.resolver.resolve(&name)? {
-            ResolvedType::Project(v) => self.build_project_type(&name, v),
-            ResolvedType::External(_) => todo!(),
-        };
+        // Resolve type.
+        let ty = self.resolver.resolve(&name)?;
 
-        Some(ty)
+        Some((name, ty))
     }
 
     pub fn build<F: AsRef<std::path::Path>>(self, file: F, exe: bool) -> Result<(), BuildError> {
@@ -262,24 +312,22 @@ impl<'a> Codegen<'a> {
         Ok(())
     }
 
-    fn build_project_type(&self, name: &str, ty: &SourceFile) -> LlvmType<'_, 'a> {
-        match ty.ty().unwrap() {
-            TypeDefinition::Struct(v) => self.build_project_struct(name, v),
-            TypeDefinition::Class(_) => todo!(),
+    fn mangle_self(buf: &mut String, path: &str) {
+        buf.push('S');
+
+        for p in path.strip_prefix("self.").unwrap().split('.') {
+            write!(buf, "{}{}", p.len(), p).unwrap();
         }
     }
 
-    fn build_project_struct(&self, name: &str, ty: &Struct) -> LlvmType<'_, 'a> {
-        match ty {
-            Struct::Primitive(_, r, _, _) => match r {
-                Representation::I32 => LlvmType::I32(LlvmI32::new(self)),
-                Representation::U8 => LlvmType::U8(LlvmU8::new(self)),
-                Representation::Un => match self.pointer_size() {
-                    8 => LlvmType::U64(LlvmU64::new(self)),
-                    _ => todo!(),
-                },
-            },
-            Struct::Composite(_, _, _) => todo!(),
+    fn mangle_ext(buf: &mut String, pkg: &PackageMeta, ty: &ExportedType) {
+        let name = pkg.name().as_str();
+
+        write!(buf, "E{}{}", name.len(), name).unwrap();
+        write!(buf, "V{}T", pkg.version().major()).unwrap();
+
+        for p in ty.name().split('.') {
+            write!(buf, "{}{}", p.len(), p).unwrap();
         }
     }
 }

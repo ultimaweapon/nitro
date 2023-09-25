@@ -375,7 +375,24 @@ impl SourceFile {
                 Token::Identifier(name) => {
                     // Parse the parameter.
                     lex.next_colon()?;
-                    params.push(FunctionParam::new(name, Self::parse_type(lex)?));
+
+                    let ty = Self::parse_type(lex)?;
+
+                    match ty.name() {
+                        TypeName::Unit(o, c) => {
+                            return Err(SyntaxError::new(
+                                o.span() + c.span(),
+                                "unit type cannot be a function parameter",
+                            ));
+                        }
+                        TypeName::Never(t) => {
+                            return Err(SyntaxError::new(
+                                t.span().clone(),
+                                "never type cannot be a function parameter",
+                            ));
+                        }
+                        TypeName::Ident(_) => params.push(FunctionParam::new(name, ty)),
+                    }
 
                     // Check for a ','.
                     let tok = match lex.next()? {
@@ -486,7 +503,16 @@ impl SourceFile {
         };
 
         let name = match next {
-            Token::ExclamationMark(v) => TypeName::Never(v),
+            Token::ExclamationMark(v) => {
+                if prefixes.is_empty() {
+                    TypeName::Never(v)
+                } else {
+                    return Err(SyntaxError::new(
+                        v.span().clone(),
+                        "never type cannot be a pointer",
+                    ));
+                }
+            }
             Token::OpenParenthesis(o) => TypeName::Unit(o, lex.next_cp()?),
             Token::Identifier(mut ident) => {
                 let mut fqtn = Vec::new();

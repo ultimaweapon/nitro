@@ -30,6 +30,18 @@ impl Function {
         }
     }
 
+    pub fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    pub fn params(&self) -> &[FunctionParam] {
+        self.params.as_ref()
+    }
+
+    pub fn ret(&self) -> Option<&Type> {
+        self.ret.as_ref()
+    }
+
     pub fn build<'a, 'b: 'a>(
         &self,
         cx: &'a Codegen<'b>,
@@ -45,7 +57,7 @@ impl Function {
         // Build function name.
         let name = match self.attrs.ext() {
             Some((_, Extern::C)) => Cow::Borrowed(self.name.value()),
-            None => Cow::Owned(cx.encode_name(container, self.name.value())),
+            None => Cow::Owned(cx.mangle(&[], container, self)?),
         };
 
         // Check if function already exists.
@@ -129,5 +141,9 @@ pub struct FunctionParam {
 impl FunctionParam {
     pub fn new(name: Identifier, ty: Type) -> Self {
         Self { name, ty }
+    }
+
+    pub fn ty(&self) -> &Type {
+        &self.ty
     }
 }

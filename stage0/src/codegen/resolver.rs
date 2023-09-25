@@ -1,5 +1,5 @@
 use crate::ast::SourceFile;
-use crate::pkg::ExportedType;
+use crate::pkg::{ExportedType, PackageMeta};
 use std::collections::HashMap;
 
 /// An object to resolve types.
@@ -35,5 +35,5 @@ impl<'a> TypeResolver<'a> {
 /// A type that was resolved by [`Resolver`].
 pub enum ResolvedType<'a> {
     Project(&'a SourceFile),
-    External(&'a ExportedType),
+    External((&'a PackageMeta, &'a ExportedType)),
 }
