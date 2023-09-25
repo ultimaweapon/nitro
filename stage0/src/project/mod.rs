@@ -311,6 +311,7 @@ impl<'a> Project<'a> {
             OperatingSystem::Linux => {
                 args.push("-o".into());
                 args.push(out.to_str().unwrap().to_owned().into());
+                args.push("--shared".into());
                 "ld.lld"
             }
             OperatingSystem::Win32 => {
