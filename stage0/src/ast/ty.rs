@@ -51,6 +51,32 @@ impl Type {
         Ok(Some(ty))
     }
 
+    pub fn to_export<'a, 'b: 'a>(&self, cx: &'a Codegen<'b>, uses: &[Use]) -> crate::pkg::Type {
+        use crate::pkg::Type;
+
+        let ptr = self.prefixes.len();
+
+        match &self.name {
+            TypeName::Unit(_, _) => Type::Unit(ptr),
+            TypeName::Never(_) => Type::Never,
+            TypeName::Ident(n) => {
+                let (n, t) = cx.resolve(uses, n).unwrap();
+
+                match t {
+                    ResolvedType::Project(f) => {
+                        Type::Local(ptr, n.strip_prefix("self.").unwrap().to_owned())
+                    }
+                    ResolvedType::External((p, t)) => Type::External(
+                        ptr,
+                        p.name().to_string(),
+                        p.version().major(),
+                        t.name().to_owned(),
+                    ),
+                }
+            }
+        }
+    }
+
     fn build_project_type<'a, 'b: 'a>(
         cx: &'a Codegen<'b>,
         name: &str,

@@ -87,16 +87,12 @@ fn build(args: &ArgMatches) -> ExitCode {
             eprintln!("{}: {}", p.display(), e);
             return ExitCode::FAILURE;
         }
-        Err(ProjectBuildError::CreateDirectoryFailed(p, e)) => {
-            eprintln!("Cannot create {}: {}.", p.display(), e);
-            return ExitCode::FAILURE;
-        }
         Err(ProjectBuildError::BuildFailed(p, e)) => {
             eprintln!("Cannot build {}: {}", p.display(), e);
             return ExitCode::FAILURE;
         }
-        Err(ProjectBuildError::LinkFailed(p, e)) => {
-            eprintln!("Cannot link {}: {}.", p.display(), e);
+        Err(e) => {
+            eprintln!("{}: {}", project.path().display(), join_nested(&e));
             return ExitCode::FAILURE;
         }
     };

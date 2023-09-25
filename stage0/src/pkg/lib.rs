@@ -1,5 +1,8 @@
-use super::ExportedType;
+use super::{ExportedType, PackageName, PackageVersion};
 use std::collections::HashSet;
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
 
 /// Contains information about a Nitro library.
 ///
@@ -27,5 +30,31 @@ impl Library {
 
     pub fn add_type(&mut self, ty: ExportedType) {
         assert!(self.types.insert(ty));
+    }
+
+    pub fn write_module_definition<F>(
+        &self,
+        pkg: &PackageName,
+        ver: &PackageVersion,
+        file: F,
+    ) -> Result<(), std::io::Error>
+    where
+        F: AsRef<Path>,
+    {
+        // Create the file.
+        let mut file = File::create(file)?;
+
+        file.write_all(b"EXPORTS\n")?;
+
+        // Dumpt public types.
+        for ty in &self.types {
+            for func in ty.funcs() {
+                file.write_all(b"    ")?;
+                file.write_all(func.mangle(pkg, ver, ty).as_bytes())?;
+                file.write_all(b"\n")?;
+            }
+        }
+
+        Ok(())
     }
 }

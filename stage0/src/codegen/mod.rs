@@ -322,9 +322,15 @@ impl<'a> Codegen<'a> {
 
     fn mangle_ext(buf: &mut String, pkg: &PackageMeta, ty: &ExportedType) {
         let name = pkg.name().as_str();
+        let ver = pkg.version().major();
 
         write!(buf, "E{}{}", name.len(), name).unwrap();
-        write!(buf, "V{}T", pkg.version().major()).unwrap();
+
+        if ver != 0 {
+            write!(buf, "V{ver}T",).unwrap();
+        } else {
+            buf.push('T');
+        }
 
         for p in ty.name().split('.') {
             write!(buf, "{}{}", p.len(), p).unwrap();

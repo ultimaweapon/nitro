@@ -30,6 +30,10 @@ impl Function {
         }
     }
 
+    pub fn attrs(&self) -> &Attributes {
+        &self.attrs
+    }
+
     pub fn name(&self) -> &Identifier {
         &self.name
     }
@@ -141,6 +145,10 @@ pub struct FunctionParam {
 impl FunctionParam {
     pub fn new(name: Identifier, ty: Type) -> Self {
         Self { name, ty }
+    }
+
+    pub fn name(&self) -> &Identifier {
+        &self.name
     }
 
     pub fn ty(&self) -> &Type {

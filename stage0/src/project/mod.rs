@@ -5,7 +5,8 @@ use crate::codegen::{BuildError, Codegen, TypeResolver};
 use crate::dep::DepResolver;
 use crate::lexer::SyntaxError;
 use crate::pkg::{
-    Architecture, ExportedType, Library, OperatingSystem, Package, PackageMeta, Target,
+    Architecture, ExportedFunc, ExportedType, FunctionParam, Library, OperatingSystem, Package,
+    PackageMeta, Target, Type,
 };
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
@@ -221,12 +222,43 @@ impl<'a> Project<'a> {
 
             for im in src.impls() {
                 for func in im.functions() {
-                    let func = match func.build(&cx, &fqtn) {
-                        Ok(v) => v,
+                    // Compile the function.
+                    match func.build(&cx, &fqtn) {
+                        Ok(v) => {
+                            if v.is_none() {
+                                continue;
+                            }
+                        }
                         Err(e) => {
                             return Err(ProjectBuildError::InvalidSyntax(src.path().to_owned(), e));
                         }
-                    };
+                    }
+
+                    // Export the function.
+                    let public = func
+                        .attrs()
+                        .public()
+                        .filter(|(_, p)| *p == Public::External);
+
+                    if let Some((exp, _)) = exp.as_mut().zip(public) {
+                        let name = func.name().value().to_owned();
+                        let params = func
+                            .params()
+                            .iter()
+                            .map(|p| {
+                                FunctionParam::new(
+                                    p.name().value().to_owned(),
+                                    p.ty().to_export(&cx, &[]),
+                                )
+                            })
+                            .collect();
+                        let ret = match func.ret() {
+                            Some(v) => v.to_export(&cx, &[]),
+                            None => Type::Unit(0),
+                        };
+
+                        exp.add_func(ExportedFunc::new(name, params, ret));
+                    }
                 }
             }
 
@@ -286,8 +318,15 @@ impl<'a> Project<'a> {
                 "ld.lld"
             }
             OperatingSystem::Win32 => {
+                let def = dir.join(format!("{}.def", pkg.name()));
+
+                if let Err(e) = lib.write_module_definition(pkg.name(), pkg.version(), &def) {
+                    return Err(ProjectBuildError::CreateModuleDefinitionFailed(def, e));
+                }
+
                 args.push(format!("/out:{}", out.to_str().unwrap()).into());
                 args.push("/dll".into());
+                args.push(format!("/def:{}", def.to_str().unwrap()).into());
                 "lld-link"
             }
         };
@@ -383,6 +422,9 @@ pub enum ProjectBuildError {
 
     #[error("cannot build {0}")]
     BuildFailed(PathBuf, #[source] BuildError),
+
+    #[error("cannot create module defition at {0}")]
+    CreateModuleDefinitionFailed(PathBuf, #[source] std::io::Error),
 
     #[error("cannot link {0}")]
     LinkFailed(PathBuf, #[source] LinkError),
