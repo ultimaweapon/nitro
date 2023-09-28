@@ -22,6 +22,9 @@ pub struct Library {
 }
 
 impl Library {
+    const ENTRY_END: u8 = 0;
+    const ENTRY_TYPES: u8 = 1;
+
     pub fn new() -> Self {
         Self {
             types: HashSet::new(),
@@ -56,5 +59,23 @@ impl Library {
         }
 
         Ok(())
+    }
+
+    pub fn serialize<W: Write>(&self, mut w: W) -> Result<(), std::io::Error> {
+        // Write magic.
+        w.write_all(b"\x7FNLM")?;
+
+        // Write types.
+        let types: u32 = self.types.len().try_into().unwrap();
+
+        w.write_all(&[Self::ENTRY_TYPES])?;
+        w.write_all(&types.to_be_bytes())?;
+
+        for ty in &self.types {
+            ty.serialize(&mut w)?;
+        }
+
+        // End.
+        w.write_all(&[Self::ENTRY_END])
     }
 }

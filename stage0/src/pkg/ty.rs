@@ -10,6 +10,10 @@ pub struct ExportedType {
 }
 
 impl ExportedType {
+    const ENTRY_END: u8 = 0;
+    const ENTRY_NAME: u8 = 1;
+    const ENTRY_FUNC: u8 = 2;
+
     pub fn new(name: String) -> Self {
         Self {
             name,
@@ -27,6 +31,28 @@ impl ExportedType {
 
     pub fn add_func(&mut self, f: ExportedFunc) {
         assert!(self.funcs.insert(f));
+    }
+
+    pub(super) fn serialize<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+        // Type name.
+        let len: u16 = self.name.len().try_into().unwrap();
+
+        w.write_all(&[Self::ENTRY_NAME])?;
+        w.write_all(&len.to_be_bytes())?;
+        w.write_all(self.name.as_bytes())?;
+
+        // Functions.
+        let len: u32 = self.funcs.len().try_into().unwrap();
+
+        w.write_all(&[Self::ENTRY_FUNC])?;
+        w.write_all(&len.to_be_bytes())?;
+
+        for f in &self.funcs {
+            f.serialize(w)?;
+        }
+
+        // End.
+        w.write_all(&[Self::ENTRY_END])
     }
 }
 
@@ -52,6 +78,11 @@ pub struct ExportedFunc {
 }
 
 impl ExportedFunc {
+    const ENTRY_END: u8 = 0;
+    const ENTRY_NAME: u8 = 1;
+    const ENTRY_RET: u8 = 2;
+    const ENTRY_PARAMS: u8 = 3;
+
     pub fn new(name: String, params: Vec<FunctionParam>, ret: Type) -> Self {
         Self { name, params, ret }
     }
@@ -89,6 +120,32 @@ impl ExportedFunc {
 
         buf
     }
+
+    fn serialize<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+        // Name.
+        let len: u16 = self.name.len().try_into().unwrap();
+
+        w.write_all(&[Self::ENTRY_NAME])?;
+        w.write_all(&len.to_be_bytes())?;
+        w.write_all(self.name.as_bytes())?;
+
+        // Return.
+        w.write_all(&[Self::ENTRY_RET])?;
+        self.ret.serialize(w)?;
+
+        // Params.
+        let len: u8 = self.params.len().try_into().unwrap();
+
+        w.write_all(&[Self::ENTRY_PARAMS])?;
+        w.write_all(&[len])?;
+
+        for p in &self.params {
+            p.serialize(w)?;
+        }
+
+        // End.
+        w.write_all(&[Self::ENTRY_END])
+    }
 }
 
 impl PartialEq for ExportedFunc {
@@ -112,8 +169,28 @@ pub struct FunctionParam {
 }
 
 impl FunctionParam {
+    const ENTRY_END: u8 = 0;
+    const ENTRY_NAME: u8 = 1;
+    const ENTRY_TYPE: u8 = 2;
+
     pub fn new(name: String, ty: Type) -> Self {
         Self { name, ty }
+    }
+
+    fn serialize<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+        // Name.
+        let len: u8 = self.name.len().try_into().unwrap();
+
+        w.write_all(&[Self::ENTRY_NAME])?;
+        w.write_all(&[len])?;
+        w.write_all(self.name.as_bytes())?;
+
+        // Type.
+        w.write_all(&[Self::ENTRY_TYPE])?;
+        self.ty.serialize(w)?;
+
+        // End.
+        w.write_all(&[Self::ENTRY_END])
     }
 }
 
@@ -165,5 +242,31 @@ impl Type {
                 }
             }
         }
+    }
+
+    fn serialize<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+        match self {
+            Self::Unit(p) => w.write_all(&[0, (*p).try_into().unwrap()])?,
+            Self::Never => w.write_all(&[3])?,
+            Self::Local(p, n) => {
+                let l: u16 = n.len().try_into().unwrap();
+
+                w.write_all(&[1, (*p).try_into().unwrap()])?;
+                w.write_all(&l.to_be_bytes())?;
+                w.write_all(n.as_bytes())?;
+            }
+            Self::External(ptr, pkg, ver, path) => {
+                let l: u16 = path.len().try_into().unwrap();
+
+                w.write_all(&[2, (*ptr).try_into().unwrap()])?;
+                w.write_all(&[pkg.len().try_into().unwrap()])?;
+                w.write_all(pkg.as_bytes())?;
+                w.write_all(&ver.to_be_bytes())?;
+                w.write_all(&l.to_be_bytes())?;
+                w.write_all(path.as_bytes())?;
+            }
+        }
+
+        Ok(())
     }
 }
