@@ -12,7 +12,9 @@ use crate::ffi::{
     llvm_target_lookup,
 };
 use crate::lexer::SyntaxError;
-use crate::pkg::{ExportedType, OperatingSystem, PackageMeta, PackageName, PackageVersion, Target};
+use crate::pkg::{
+    ExportedType, PackageMeta, PackageName, PackageVersion, PrimitiveTarget, TargetOs,
+};
 use std::error::Error;
 use std::ffi::{CStr, CString};
 use std::fmt::{Display, Formatter, Write};
@@ -34,7 +36,7 @@ pub struct Codegen<'a> {
     machine: *mut crate::ffi::LlvmMachine,
     pkg: &'a PackageName,
     version: &'a PackageVersion,
-    target: &'a Target,
+    target: &'static PrimitiveTarget,
     namespace: &'a str,
     resolver: &'a TypeResolver<'a>,
 }
@@ -43,11 +45,11 @@ impl<'a> Codegen<'a> {
     pub fn new(
         pkg: &'a PackageName,
         version: &'a PackageVersion,
-        target: &'a Target,
+        target: &'static PrimitiveTarget,
         resolver: &'a TypeResolver<'a>,
     ) -> Self {
         // Get LLVM target.
-        let triple = CString::new(target.to_llvm()).unwrap();
+        let triple = CString::new(target.to_string()).unwrap();
         let llvm = {
             let mut err = String::new();
             let ptr = unsafe { llvm_target_lookup(triple.as_ptr(), &mut err) };
@@ -104,17 +106,13 @@ impl<'a> Codegen<'a> {
             Some(Expression::NotEqual(f, s)) => (false, f.span() + s.span()),
             Some(Expression::Equal(f, s)) => (true, f.span() + s.span()),
             Some(e) => return Err(SyntaxError::new(e.span(), "unsupported expression")),
-            None => match lhs.value() {
-                "unix" => match os {
-                    OperatingSystem::Darwin | OperatingSystem::Linux => return Ok(true),
-                    OperatingSystem::Win32 => return Ok(false),
-                },
-                "win32" => match os {
-                    OperatingSystem::Darwin | OperatingSystem::Linux => return Ok(false),
-                    OperatingSystem::Win32 => return Ok(true),
-                },
-                _ => return Err(SyntaxError::new(lhs.span().clone(), "unknown argument")),
-            },
+            None => {
+                return Ok(if lhs.value() == "unix" {
+                    os.is_unix()
+                } else {
+                    lhs.value() == os.name()
+                })
+            }
         };
 
         // Check if first expression is "os".
@@ -131,21 +129,9 @@ impl<'a> Codegen<'a> {
 
         // Compare.
         let res = if equal {
-            match rhs.value() {
-                "windows" => match os {
-                    OperatingSystem::Darwin | OperatingSystem::Linux => false,
-                    OperatingSystem::Win32 => true,
-                },
-                _ => todo!(),
-            }
+            rhs.value() == os.name()
         } else {
-            match rhs.value() {
-                "windows" => match os {
-                    OperatingSystem::Darwin | OperatingSystem::Linux => true,
-                    OperatingSystem::Win32 => false,
-                },
-                _ => todo!(),
-            }
+            rhs.value() != os.name()
         };
 
         if expr.next().is_some() {
@@ -270,7 +256,7 @@ impl<'a> Codegen<'a> {
 
     pub fn build<F: AsRef<std::path::Path>>(self, file: F, exe: bool) -> Result<(), BuildError> {
         // Generate DllMain for DLL on Windows.
-        if self.target.os() == OperatingSystem::Win32 && !exe {
+        if self.target.os() == TargetOs::Win32 && !exe {
             self.build_dll_main()?;
         }
 

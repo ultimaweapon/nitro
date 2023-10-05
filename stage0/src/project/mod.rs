@@ -5,8 +5,8 @@ use crate::codegen::{BuildError, Codegen, TypeResolver};
 use crate::dep::DepResolver;
 use crate::lexer::SyntaxError;
 use crate::pkg::{
-    Architecture, ExportedFunc, ExportedType, FunctionParam, Library, OperatingSystem, Package,
-    PackageMeta, Target, Type,
+    ExportedFunc, ExportedType, FunctionParam, Library, Package, PackageMeta, PrimitiveTarget,
+    Target, TargetArch, TargetOs, TargetResolveError, TargetResolver, Type,
 };
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
@@ -112,16 +112,17 @@ impl<'a> Project<'a> {
 
     pub fn build(&self) -> Result<Package, ProjectBuildError> {
         // Setup type resolver.
-        let mut resolver = TypeResolver::new();
+        let mut types = TypeResolver::new();
 
-        resolver.populate_project_types(&self.sources);
+        types.populate_project_types(&self.sources);
 
         // Build.
+        let mut targets = TargetResolver::new();
         let mut exes = HashMap::new();
         let mut libs = HashMap::new();
 
-        for target in &Target::SUPPORTED_TARGETS {
-            let bins = self.build_for(target, &resolver)?;
+        for target in PrimitiveTarget::ALL.iter().map(|t| Target::Primitive(t)) {
+            let bins = self.build_for(&target, &mut types, &mut targets)?;
 
             if let Some(exe) = bins.exe {
                 assert!(exes.insert(target.clone(), exe).is_none());
@@ -180,11 +181,18 @@ impl<'a> Project<'a> {
     fn build_for(
         &self,
         target: &Target,
-        resolver: &TypeResolver<'_>,
+        types: &mut TypeResolver<'_>,
+        targets: &mut TargetResolver,
     ) -> Result<BuildOutputs, ProjectBuildError> {
+        // Get primitive target.
+        let pt = match targets.resolve(target) {
+            Ok(v) => v,
+            Err(e) => return Err(ProjectBuildError::ResolveTargetFailed(target.clone(), e)),
+        };
+
         // Setup codegen context.
         let pkg = self.meta.package();
-        let mut cx = Codegen::new(pkg.name(), pkg.version(), &target, resolver);
+        let mut cx = Codegen::new(pkg.name(), pkg.version(), pt, types);
 
         // Enumerate the sources.
         let mut lib = Library::new();
@@ -271,7 +279,7 @@ impl<'a> Project<'a> {
         // Create output directory.
         let mut dir = self.artifacts();
 
-        dir.push(target.to_llvm());
+        dir.push(target.to_string());
 
         if let Err(e) = create_dir_all(&dir) {
             return Err(ProjectBuildError::CreateDirectoryFailed(dir, e));
@@ -286,20 +294,20 @@ impl<'a> Project<'a> {
 
         // Prepare to link.
         let mut args: Vec<Cow<'static, str>> = Vec::new();
-        let out = dir.join(match target.os() {
-            OperatingSystem::Darwin => format!("lib{}.dylib", pkg.name()),
-            OperatingSystem::Linux => format!("lib{}.so", pkg.name()),
-            OperatingSystem::Win32 => format!("{}.dll", pkg.name()),
+        let out = dir.join(match pt.os() {
+            TargetOs::Darwin => format!("lib{}.dylib", pkg.name()),
+            TargetOs::Linux => format!("lib{}.so", pkg.name()),
+            TargetOs::Win32 => format!("{}.dll", pkg.name()),
         });
 
-        let linker = match target.os() {
-            OperatingSystem::Darwin => {
+        let linker = match pt.os() {
+            TargetOs::Darwin => {
                 args.push("-o".into());
                 args.push(out.to_str().unwrap().to_owned().into());
                 args.push("-arch".into());
-                args.push(match target.arch() {
-                    Architecture::Aarch64 => "arm64".into(),
-                    Architecture::X86_64 => "x86_64".into(),
+                args.push(match pt.arch() {
+                    TargetArch::AArch64 => "arm64".into(),
+                    TargetArch::X86_64 => "x86_64".into(),
                 });
                 args.push("-platform_version".into());
                 args.push("macos".into());
@@ -308,13 +316,13 @@ impl<'a> Project<'a> {
                 args.push("-dylib".into());
                 "ld64.lld"
             }
-            OperatingSystem::Linux => {
+            TargetOs::Linux => {
                 args.push("-o".into());
                 args.push(out.to_str().unwrap().to_owned().into());
                 args.push("--shared".into());
                 "ld.lld"
             }
-            OperatingSystem::Win32 => {
+            TargetOs::Win32 => {
                 let def = dir.join(format!("{}.def", pkg.name()));
 
                 if let Err(e) = lib.write_module_definition(pkg.name(), pkg.version(), &def) {
@@ -411,6 +419,9 @@ pub enum ProjectLoadError {
 /// Represents an error when a [`Project`] is failed to build.
 #[derive(Debug, Error)]
 pub enum ProjectBuildError {
+    #[error("cannot resolve end target of {0}")]
+    ResolveTargetFailed(Target, #[source] TargetResolveError),
+
     #[error("invalid syntax in {0}")]
     InvalidSyntax(PathBuf, #[source] SyntaxError),
 

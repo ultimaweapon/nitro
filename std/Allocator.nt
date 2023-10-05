@@ -11,10 +11,10 @@ impl Allocator {
         let ptr = _aligned_malloc(size, align);
 
         if ptr == null {
-            @if(os != "windows")
+            @if(os != "win32")
             abort();
 
-            @if(os == "windows")
+            @if(os == "win32")
             asm("int 0x29", in("ecx") 7, out(!) _);
         }
 
