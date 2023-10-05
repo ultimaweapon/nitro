@@ -1,28 +1,29 @@
+pub use self::dep::*;
 pub use self::lib::*;
 pub use self::meta::*;
 pub use self::target::*;
 pub use self::ty::*;
 
-use crate::dep::DepResolver;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use thiserror::Error;
 
+mod dep;
 mod lib;
 mod meta;
 mod target;
 mod ty;
 
-/// A unpacked Nitro package.
+/// An unpacked Nitro package.
 ///
 /// One package can contains only a single executable and a single library, per architecture.
 pub struct Package {
     meta: PackageMeta,
-    exes: HashMap<Target, PathBuf>,
-    libs: HashMap<Target, (PathBuf, Library)>,
+    exes: HashMap<Target, Binary<PathBuf>>,
+    libs: HashMap<Target, Binary<Library>>,
 }
 
 impl Package {
@@ -38,8 +39,8 @@ impl Package {
 
     pub fn new(
         meta: PackageMeta,
-        exes: HashMap<Target, PathBuf>,
-        libs: HashMap<Target, (PathBuf, Library)>,
+        exes: HashMap<Target, Binary<PathBuf>>,
+        libs: HashMap<Target, Binary<Library>>,
     ) -> Self {
         assert!(!exes.is_empty() || !libs.is_empty());
 
@@ -85,7 +86,7 @@ impl Package {
         Ok(())
     }
 
-    pub fn export<T>(&self, to: T, resolver: &mut DepResolver) -> Result<(), PackageExportError>
+    pub fn export<T>(&self, to: T, deps: &DependencyResolver) -> Result<(), PackageExportError>
     where
         T: AsRef<Path>,
     {
@@ -98,6 +99,18 @@ impl Package {
         T: AsRef<Path>,
     {
         todo!()
+    }
+}
+
+/// A compiled binary file.
+pub struct Binary<T> {
+    bin: T,
+    deps: HashSet<Dependency>,
+}
+
+impl<T> Binary<T> {
+    pub fn new(bin: T, deps: HashSet<Dependency>) -> Self {
+        Self { bin, deps }
     }
 }
 

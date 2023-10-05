@@ -1,6 +1,6 @@
 use crate::ast::ParseError;
-use crate::dep::DepResolver;
 use crate::ffi::llvm_init;
+use crate::pkg::DependencyResolver;
 use crate::project::{Project, ProjectBuildError, ProjectLoadError, ProjectType};
 use clap::{command, value_parser, Arg, ArgMatches, Command};
 use std::error::Error;
@@ -11,7 +11,6 @@ use std::process::ExitCode;
 
 mod ast;
 mod codegen;
-mod dep;
 mod ffi;
 mod lexer;
 mod pkg;
@@ -52,7 +51,7 @@ fn build(args: &ArgMatches) -> ExitCode {
     unsafe { llvm_init() };
 
     // Setup dependency resolver.
-    let mut resolver = DepResolver::new();
+    let mut resolver = DependencyResolver::new();
 
     // Open the project.
     let path = args.get_one::<PathBuf>("project").unwrap();

@@ -2,18 +2,19 @@ pub use self::meta::*;
 
 use crate::ast::{ParseError, Public, SourceFile};
 use crate::codegen::{BuildError, Codegen, TypeResolver};
-use crate::dep::DepResolver;
 use crate::lexer::SyntaxError;
 use crate::pkg::{
-    ExportedFunc, ExportedType, FunctionParam, Library, Package, PackageMeta, PrimitiveTarget,
-    Target, TargetArch, TargetOs, TargetResolveError, TargetResolver, Type,
+    Binary, DependencyResolver, ExportedFunc, ExportedType, FunctionParam, Library, LibraryBinary,
+    Package, PackageMeta, PackageName, PackageVersion, PrimitiveTarget, Target, TargetArch,
+    TargetOs, TargetResolveError, TargetResolver, Type,
 };
 use std::borrow::Cow;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::error::Error;
 use std::ffi::{c_char, CStr, CString};
 use std::fmt::{Display, Formatter};
-use std::fs::create_dir_all;
+use std::fs::{create_dir_all, File};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::ptr::null;
 use thiserror::Error;
@@ -25,13 +26,13 @@ pub struct Project<'a> {
     path: PathBuf,
     meta: ProjectMeta,
     sources: HashMap<String, SourceFile>,
-    resolver: &'a mut DepResolver,
+    deps: &'a DependencyResolver,
 }
 
 impl<'a> Project<'a> {
     pub fn open<P: Into<PathBuf>>(
         path: P,
-        resolver: &'a mut DepResolver,
+        deps: &'a mut DependencyResolver,
     ) -> Result<Self, ProjectOpenError> {
         // Read the project.
         let path = path.into();
@@ -51,7 +52,7 @@ impl<'a> Project<'a> {
             path,
             meta,
             sources: HashMap::new(),
-            resolver,
+            deps,
         })
     }
 
@@ -122,13 +123,13 @@ impl<'a> Project<'a> {
         let mut libs = HashMap::new();
 
         for target in PrimitiveTarget::ALL.iter().map(|t| Target::Primitive(t)) {
-            let bins = self.build_for(&target, &mut types, &mut targets)?;
+            let (exe, lib) = self.build_for(&target, &mut types, &mut targets)?;
 
-            if let Some(exe) = bins.exe {
+            if let Some(exe) = exe {
                 assert!(exes.insert(target.clone(), exe).is_none());
             }
 
-            if let Some(lib) = bins.lib {
+            if let Some(lib) = lib {
                 assert!(libs.insert(target.clone(), lib).is_none());
             }
         }
@@ -183,7 +184,7 @@ impl<'a> Project<'a> {
         target: &Target,
         types: &mut TypeResolver<'_>,
         targets: &mut TargetResolver,
-    ) -> Result<BuildOutputs, ProjectBuildError> {
+    ) -> Result<(Option<Binary<PathBuf>>, Option<Binary<Library>>), ProjectBuildError> {
         // Get primitive target.
         let pt = match targets.resolve(target) {
             Ok(v) => v,
@@ -194,8 +195,8 @@ impl<'a> Project<'a> {
         let pkg = self.meta.package();
         let mut cx = Codegen::new(pkg.name(), pkg.version(), pt, types);
 
-        // Enumerate the sources.
-        let mut lib = Library::new();
+        // Compile source files.
+        let mut types = HashSet::new();
 
         for (fqtn, src) in &self.sources {
             // Check type condition.
@@ -272,7 +273,7 @@ impl<'a> Project<'a> {
 
             // Export the type.
             if let Some(v) = exp {
-                lib.add_type(v);
+                assert!(types.insert(v));
             }
         }
 
@@ -325,7 +326,9 @@ impl<'a> Project<'a> {
             TargetOs::Win32 => {
                 let def = dir.join(format!("{}.def", pkg.name()));
 
-                if let Err(e) = lib.write_module_definition(pkg.name(), pkg.version(), &def) {
+                if let Err(e) =
+                    Self::write_module_definition(pkg.name(), pkg.version(), &types, &def)
+                {
                     return Err(ProjectBuildError::CreateModuleDefinitionFailed(def, e));
                 }
 
@@ -343,10 +346,13 @@ impl<'a> Project<'a> {
             return Err(ProjectBuildError::LinkFailed(out, e));
         }
 
-        Ok(BuildOutputs {
-            exe: None,
-            lib: Some((out, lib)),
-        })
+        Ok((
+            None,
+            Some(Binary::new(
+                Library::new(LibraryBinary::Bundle(out), types),
+                HashSet::new(),
+            )),
+        ))
     }
 
     fn link(linker: &str, args: &[Cow<'static, str>]) -> Result<(), LinkError> {
@@ -369,11 +375,33 @@ impl<'a> Project<'a> {
             Err(LinkError(err.trim_end().to_owned()))
         }
     }
-}
 
-struct BuildOutputs {
-    exe: Option<PathBuf>,
-    lib: Option<(PathBuf, Library)>,
+    fn write_module_definition<'b, F, T>(
+        pkg: &PackageName,
+        ver: &PackageVersion,
+        types: T,
+        file: F,
+    ) -> Result<(), std::io::Error>
+    where
+        F: AsRef<Path>,
+        T: IntoIterator<Item = &'b ExportedType>,
+    {
+        // Create the file.
+        let mut file = File::create(file)?;
+
+        file.write_all(b"EXPORTS\n")?;
+
+        // Dumpt public types.
+        for ty in types {
+            for func in ty.funcs() {
+                file.write_all(b"    ")?;
+                file.write_all(func.mangle(pkg, ver, ty).as_bytes())?;
+                file.write_all(b"\n")?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[allow(improper_ctypes)]

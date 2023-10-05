@@ -26,7 +26,7 @@ impl PackageMeta {
 ///
 /// A package name must start with a lower case ASCII and followed by zero of more 0-9 and a-z (only
 /// lower case). The maximum length is 32 characters.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PackageName(String);
 
 impl PackageName {
