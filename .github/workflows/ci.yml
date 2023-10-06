@@ -11,6 +11,7 @@ jobs:
     name: Build
     strategy:
       matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
         include:
         - os: ubuntu-latest
           parallel: 2
@@ -37,7 +38,7 @@ jobs:
           deps: ./build-deps.sh
           cli: ./build-cli.sh
           dist: ./build-dist.sh
-          artifact: nitro-mac-iniversal
+          artifact: nitro-mac
         - os: windows-latest
           parallel: 2
           setup: |

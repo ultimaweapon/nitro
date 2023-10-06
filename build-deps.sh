@@ -20,3 +20,18 @@ cmake \
 
 cmake --build "$dir/deps/llvm/build" --config Release
 cmake --install "$dir/deps/llvm/build" --config Release
+
+# zstd
+cmake \
+  --install-prefix "$dir/lib/zstd" \
+  -DCMAKE_BUILD_TYPE:STRING=Release \
+  -DZSTD_LEGACY_SUPPORT:BOOL=OFF \
+  -DZSTD_MULTITHREAD_SUPPORT:BOOL=OFF \
+  -DZSTD_BUILD_PROGRAMS:BOOL=OFF \
+  -DZSTD_BUILD_SHARED:BOOL=OFF \
+  -Wno-dev \
+  -B "$dir/deps/zstd/build/cmake/build" \
+  "$dir/deps/zstd/build/cmake"
+
+cmake --build "$dir/deps/zstd/build/cmake/build" --config Release
+cmake --install "$dir/deps/zstd/build/cmake/build" --config Release

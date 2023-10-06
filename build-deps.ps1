@@ -30,3 +30,31 @@ cmake --install "$PSScriptRoot/deps/llvm/build" --config Release
 if ($LASTEXITCODE -ne 0) {
     exit 1
 }
+
+# zstd
+cmake `
+    --install-prefix "$PSScriptRoot/lib/zstd" `
+    -DCMAKE_BUILD_TYPE:STRING=Release `
+    -DZSTD_LEGACY_SUPPORT:BOOL=OFF `
+    -DZSTD_MULTITHREAD_SUPPORT:BOOL=OFF `
+    -DZSTD_BUILD_PROGRAMS:BOOL=OFF `
+    -DZSTD_BUILD_SHARED:BOOL=OFF `
+    -Wno-dev `
+    -B "$PSScriptRoot/deps/zstd/build/cmake/build" `
+    "$PSScriptRoot/deps/zstd/build/cmake"
+
+if ($LASTEXITCODE -ne 0) {
+    exit 1
+}
+
+cmake --build "$PSScriptRoot/deps/zstd/build/cmake/build" --config Release
+
+if ($LASTEXITCODE -ne 0) {
+    exit 1
+}
+
+cmake --install "$PSScriptRoot/deps/zstd/build/cmake/build" --config Release
+
+if ($LASTEXITCODE -ne 0) {
+    exit 1
+}
