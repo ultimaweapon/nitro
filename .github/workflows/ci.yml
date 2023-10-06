@@ -59,6 +59,8 @@ jobs:
     steps:
     - name: Checkout source
       uses: actions/checkout@v4
+    - name: Clone sub-modules
+      run: git submodule update --init --recursive deps/zstd
     - name: Set up build environment
       run: ${{ matrix.setup }}
       id: setup
