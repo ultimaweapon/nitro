@@ -11,60 +11,61 @@ jobs:
     name: Build
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
         include:
         - os: ubuntu-latest
           parallel: 2
-          llvm: |
+          setup: |
             curl -Lo llvm.tar.xz "$LLVM_URL"
             hash=$(md5sum llvm.tar.xz | head -c 32)
             tar -xJ --strip-components=1 -C deps/llvm -f llvm.tar.xz
             rm llvm.tar.xz
-            echo "key=linux-llvm-$hash" >> $GITHUB_OUTPUT
+            echo "llvm-cache=linux-llvm-$hash" >> $GITHUB_OUTPUT
           deps: ./build-deps.sh
           cli: ./build-cli.sh
           dist: ./build-dist.sh
           artifact: nitro-linux-x86_64
         - os: macos-latest
           parallel: 3
-          llvm: |
+          setup: |
             curl -Lo llvm.tar.xz "$LLVM_URL"
             hash=$(md5 < llvm.tar.xz)
             tar -xJ --strip-components=1 -C deps/llvm -f llvm.tar.xz
+            rustup target add aarch64-apple-darwin
             rm llvm.tar.xz
-            echo "key=mac-llvm-$hash" >> $GITHUB_OUTPUT
+            echo "llvm-cache=mac-llvm-$hash" >> $GITHUB_OUTPUT
+            echo "CMAKE_OSX_ARCHITECTURES=x86_64;arm64" >> "$GITHUB_ENV"
           deps: ./build-deps.sh
           cli: ./build-cli.sh
           dist: ./build-dist.sh
-          artifact: nitro-mac-x86_64
+          artifact: nitro-mac-iniversal
         - os: windows-latest
           parallel: 2
-          llvm: |
+          setup: |
             Invoke-WebRequest -Uri "$env:LLVM_URL" -OutFile llvm.tar.xz
             $hash = (Get-FileHash llvm.tar.xz).Hash
             unxz llvm.tar.xz
             tar -x --strip-components=1 -C deps/llvm -f llvm.tar
             Remove-Item llvm.tar
-            echo "key=win-llvm-$hash" >> $env:GITHUB_OUTPUT
+            echo "llvm-cache=win-llvm-$hash" >> $env:GITHUB_OUTPUT
           deps: .\build-deps.ps1
           cli: .\build-cli.ps1
           dist: .\build-dist.ps1
           artifact: nitro-win-x86_64
     runs-on: ${{ matrix.os }}
     env:
-      LLVM_URL: https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.1/llvm-project-17.0.1.src.tar.xz
+      LLVM_URL: https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.2/llvm-project-17.0.2.src.tar.xz
       CMAKE_BUILD_PARALLEL_LEVEL: ${{ matrix.parallel }}
     steps:
     - name: Checkout source
       uses: actions/checkout@v4
-    - name: Download LLVM
-      run: ${{ matrix.llvm }}
-      id: llvm
+    - name: Set up build environment
+      run: ${{ matrix.setup }}
+      id: setup
     - name: Restore LLVM cache
       uses: actions/cache/restore@v3
       with:
         path: deps/llvm/build
-        key: ${{ steps.llvm.outputs.key }}
+        key: ${{ steps.setup.outputs.llvm-cache }}
     - name: Build dependencies
       run: ${{ matrix.deps }}
     - name: Build CLI
@@ -75,7 +76,7 @@ jobs:
       uses: actions/cache/save@v3
       with:
         path: deps/llvm/build
-        key: ${{ steps.llvm.outputs.key }}-${{ github.run_id }}
+        key: ${{ steps.setup.outputs.llvm-cache }}-${{ github.run_id }}
       if: startsWith(github.ref, 'refs/heads/')
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
