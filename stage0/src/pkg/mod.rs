@@ -4,9 +4,10 @@ pub use self::meta::*;
 pub use self::target::*;
 pub use self::ty::*;
 
+use crate::zstd::ZstdWriter;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use thiserror::Error;
@@ -31,7 +32,8 @@ impl Package {
     const ENTRY_NAME: u8 = 1;
     const ENTRY_VERSION: u8 = 2;
     const ENTRY_DATE: u8 = 3;
-    const ENTRY_LIB: u8 = 4;
+    const ENTRY_EXE: u8 = 4;
+    const ENTRY_LIB: u8 = 5;
 
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, PackageOpenError> {
         todo!()
@@ -80,7 +82,46 @@ impl Package {
                 .to_be_bytes(),
         )?;
 
-        // End of meta data.
+        // Write libraries
+        for (target, lib) in &self.libs {
+            // Write the target.
+            file.write_all(&[Self::ENTRY_LIB])?;
+            file.write_all(target.id().as_bytes())?;
+
+            // Write dependencies.
+            let count = TryInto::<u16>::try_into(lib.deps.len())
+                .unwrap()
+                .to_be_bytes();
+
+            file.write_all(&count)?;
+
+            for dep in &lib.deps {
+                dep.serialize(&mut file)?;
+            }
+
+            // Create a placeholder for binary length.
+            let lenoff = file.stream_position().unwrap();
+
+            file.write_all(&[0; 4])?;
+
+            // Write the library.
+            let mut writer = ZstdWriter::new(&mut file);
+
+            lib.bin.serialize(&mut writer)?;
+            writer.flush()?;
+
+            drop(writer);
+
+            // Write library length.
+            let cur = file.stream_position().unwrap();
+            let len: u32 = (cur - lenoff - 4).try_into().unwrap();
+
+            file.seek(SeekFrom::Start(lenoff)).unwrap();
+            file.write_all(&len.to_be_bytes())?;
+            file.seek(SeekFrom::Start(cur)).unwrap();
+        }
+
+        // End of entries.
         file.write_all(&[Self::ENTRY_END])?;
 
         Ok(())

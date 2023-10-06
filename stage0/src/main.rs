@@ -15,6 +15,7 @@ mod ffi;
 mod lexer;
 mod pkg;
 mod project;
+mod zstd;
 
 fn main() -> ExitCode {
     // Parse arguments.

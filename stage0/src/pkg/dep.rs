@@ -1,5 +1,6 @@
 use super::{PackageName, PackageVersion};
 use std::hash::{Hash, Hasher};
+use std::io::Write;
 
 /// An object for resolving package dependencies.
 pub struct DependencyResolver {}
@@ -14,6 +15,13 @@ impl DependencyResolver {
 pub struct Dependency {
     name: PackageName,
     version: PackageVersion,
+}
+
+impl Dependency {
+    pub fn serialize<W: Write>(&self, mut w: W) -> Result<(), std::io::Error> {
+        w.write_all(&self.name.to_bin())?;
+        w.write_all(&self.version.to_bin().to_be_bytes())
+    }
 }
 
 impl PartialEq for Dependency {

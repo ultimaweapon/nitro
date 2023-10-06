@@ -1,3 +1,4 @@
 [env]
 LLVM_PREFIX = { value = "lib/llvm", relative = true }
 NITRO_FFI = { value = "lib/ffi/lib", relative = true }
+ZSTD_PREFIX = { value = "lib/zstd", relative = true }

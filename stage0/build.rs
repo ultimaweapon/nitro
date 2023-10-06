@@ -70,6 +70,12 @@ fn main() {
     println!("cargo:rustc-link-lib=LLVMSupport");
     println!("cargo:rustc-link-lib=LLVMDemangle");
 
+    // Link zstd.
+    let zstd = std::env::var("ZSTD_PREFIX").unwrap();
+
+    println!("cargo:rustc-link-search={}/lib", zstd);
+    println!("cargo:rustc-link-lib=zstd");
+
     // Link C++.
     match std::env::var("CARGO_CFG_TARGET_OS").unwrap().as_str() {
         "linux" => {
