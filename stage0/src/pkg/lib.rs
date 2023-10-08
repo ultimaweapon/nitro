@@ -1,5 +1,6 @@
 use super::ExportedType;
 use std::collections::HashSet;
+use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -24,6 +25,7 @@ pub struct Library {
 impl Library {
     const ENTRY_END: u8 = 0;
     const ENTRY_TYPES: u8 = 1;
+    const ENTRY_SYSTEM: u8 = 2;
 
     pub fn new(bin: LibraryBinary, types: HashSet<ExportedType>) -> Self {
         Self { bin, types }
@@ -43,8 +45,25 @@ impl Library {
             ty.serialize(&mut w)?;
         }
 
-        // End.
-        w.write_all(&[Self::ENTRY_END])
+        // Write binary.
+        match &self.bin {
+            LibraryBinary::Bundle(path) => {
+                let mut file = File::open(&path)?;
+
+                w.write_all(&[Self::ENTRY_END])?;
+                std::io::copy(&mut file, &mut w)?;
+
+                Ok(())
+            }
+            LibraryBinary::System(name) => {
+                let len: u16 = name.len().try_into().unwrap();
+
+                w.write_all(&[Self::ENTRY_SYSTEM])?;
+                w.write_all(&len.to_be_bytes())?;
+                w.write_all(name.as_bytes())?;
+                w.write_all(&[Self::ENTRY_END])
+            }
+        }
     }
 }
 
