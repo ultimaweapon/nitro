@@ -55,10 +55,7 @@ impl Hash for Target {
 
 impl Display for Target {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Primitive(v) => v.fmt(f),
-            Self::Custom(v) => v.fmt(f),
-        }
+        self.id().fmt(f)
     }
 }
 
