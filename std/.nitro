@@ -1,4 +1,4 @@
-[package]
-name = "nitro"
-type = "lib"
-version = "1.0.0"
+package:
+  name: nitro
+  type: lib
+  version: 1.0.0

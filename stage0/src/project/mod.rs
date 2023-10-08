@@ -43,7 +43,7 @@ impl<'a> Project<'a> {
         };
 
         // Load the project.
-        let meta = match toml::from_str::<ProjectMeta>(&data) {
+        let meta = match serde_yaml::from_str::<ProjectMeta>(&data) {
             Ok(v) => v,
             Err(e) => return Err(ProjectOpenError::ParseTomlFailed(project, e)),
         };
@@ -422,7 +422,7 @@ pub enum ProjectOpenError {
     ReadFileFailed(PathBuf, #[source] std::io::Error),
 
     #[error("cannot parse {0}")]
-    ParseTomlFailed(PathBuf, #[source] toml::de::Error),
+    ParseTomlFailed(PathBuf, #[source] serde_yaml::Error),
 }
 
 /// Represents an error when a [`Project`] is failed to load.
