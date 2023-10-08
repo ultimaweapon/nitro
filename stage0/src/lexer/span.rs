@@ -52,6 +52,12 @@ impl Span {
     }
 }
 
+impl From<&Self> for Span {
+    fn from(value: &Self) -> Self {
+        value.clone()
+    }
+}
+
 impl Add for &Span {
     type Output = Span;
 

@@ -1,6 +1,8 @@
 use nitro.Int32;
 
-class App {
+class App;
+
+impl App {
     @entry
     fn Main(): Int32 {
         0

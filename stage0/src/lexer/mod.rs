@@ -335,9 +335,13 @@ pub struct SyntaxError {
 }
 
 impl SyntaxError {
-    pub fn new<R: Into<Cow<'static, str>>>(span: Span, reason: R) -> Self {
+    pub fn new<S, R>(span: S, reason: R) -> Self
+    where
+        S: Into<Span>,
+        R: Into<Cow<'static, str>>,
+    {
         Self {
-            span,
+            span: span.into(),
             reason: reason.into(),
         }
     }

@@ -8,19 +8,14 @@ pub struct Attributes {
     condition: Option<(AttributeName, Vec<Expression>)>,
     ext: Option<(AttributeName, Extern)>,
     repr: Option<(AttributeName, Representation)>,
+    entry: Option<AttributeName>,
     customs: Vec<(AttributeName, Option<Vec<Vec<Expression>>>)>,
 }
 
 impl Attributes {
     pub fn parse(lex: &mut Lexer, first: AttributeName) -> Result<Self, SyntaxError> {
         // Parse the first attribute.
-        let mut attrs = Self {
-            public: None,
-            condition: None,
-            ext: None,
-            repr: None,
-            customs: Vec::new(),
-        };
+        let mut attrs = Self::default();
 
         attrs.parse_single(lex, first)?;
 
@@ -34,7 +29,7 @@ impl Attributes {
                 }
                 None => {
                     return Err(SyntaxError::new(
-                        lex.last().unwrap().clone(),
+                        lex.last().unwrap(),
                         "expected an item after this",
                     ));
                 }
@@ -62,11 +57,22 @@ impl Attributes {
 
     fn parse_single(&mut self, lex: &mut Lexer, name: AttributeName) -> Result<(), SyntaxError> {
         match name.value() {
+            "entry" => {
+                // Check for multiple entry.
+                if self.entry.is_some() {
+                    return Err(SyntaxError::new(
+                        name.span(),
+                        "multiple entry attribute is not allowed",
+                    ));
+                }
+
+                self.entry = Some(name);
+            }
             "ext" => {
                 // Check for multiple ext.
                 if self.ext.is_some() {
                     return Err(SyntaxError::new(
-                        name.span().clone(),
+                        name.span(),
                         "multiple ext attribute is not allowed",
                     ));
                 }
@@ -80,7 +86,7 @@ impl Attributes {
                     name,
                     match ext.value() {
                         "C" => Extern::C,
-                        _ => return Err(SyntaxError::new(ext.span().clone(), "unknown extern")),
+                        _ => return Err(SyntaxError::new(ext.span(), "unknown extern")),
                     },
                 ));
             }
@@ -88,7 +94,7 @@ impl Attributes {
                 // Check for multiple if.
                 if self.condition.is_some() {
                     return Err(SyntaxError::new(
-                        name.span().clone(),
+                        name.span(),
                         "multiple if attribute is not allowed",
                     ));
                 }
@@ -102,7 +108,7 @@ impl Attributes {
                 // Check for multiple pub.
                 if self.public.is_some() {
                     return Err(SyntaxError::new(
-                        name.span().clone(),
+                        name.span(),
                         "multiple pub attribute is not allowed",
                     ));
                 }
@@ -124,7 +130,7 @@ impl Attributes {
                 // Check for multiple repr.
                 if self.repr.is_some() {
                     return Err(SyntaxError::new(
-                        name.span().clone(),
+                        name.span(),
                         "multiple repr attribute is not allowed",
                     ));
                 }
@@ -140,18 +146,13 @@ impl Attributes {
                         "i32" => Representation::I32,
                         "u8" => Representation::U8,
                         "un" => Representation::Un,
-                        _ => {
-                            return Err(SyntaxError::new(
-                                repr.span().clone(),
-                                "unknown representation",
-                            ));
-                        }
+                        _ => return Err(SyntaxError::new(repr.span(), "unknown representation")),
                     },
                 ));
             }
             v if v.chars().next().unwrap().is_ascii_lowercase() => {
                 return Err(SyntaxError::new(
-                    name.span().clone(),
+                    name.span(),
                     "an attribute begin with a lower case is a reserved name",
                 ));
             }
@@ -160,7 +161,7 @@ impl Attributes {
                 match lex.next()? {
                     Some(Token::OpenParenthesis(_)) => Some(Expression::parse_args(lex)?),
                     Some(Token::CloseParenthesis(v)) => {
-                        return Err(SyntaxError::new(v.span().clone(), "expect '('"));
+                        return Err(SyntaxError::new(v.span(), "expect '('"));
                     }
                     _ => {
                         lex.undo();
