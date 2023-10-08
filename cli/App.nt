@@ -1,0 +1,8 @@
+use nitro.Int32;
+
+class App {
+    @entry
+    fn Main(): Int32 {
+        0
+    }
+}
