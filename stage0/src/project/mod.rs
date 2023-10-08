@@ -232,7 +232,7 @@ impl<'a> Project<'a> {
             for im in src.impls() {
                 for func in im.functions() {
                     // Compile the function.
-                    match func.build(&cx, &fqtn) {
+                    match func.build(&cx, &fqtn, src.uses()) {
                         Ok(v) => {
                             if v.is_none() {
                                 continue;

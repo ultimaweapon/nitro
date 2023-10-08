@@ -1,4 +1,4 @@
-use super::{Attributes, Extern, Statement, Type};
+use super::{Attributes, Extern, Statement, Type, Use};
 use crate::codegen::{BasicBlock, Builder, Codegen, LlvmFunc, LlvmType, LlvmVoid};
 use crate::lexer::{Identifier, SyntaxError};
 use std::borrow::Cow;
@@ -46,10 +46,11 @@ impl Function {
         self.ret.as_ref()
     }
 
-    pub fn build<'a, 'b: 'a>(
+    pub fn build<'a, 'b: 'a, U: IntoIterator<Item = &'a Use> + Clone>(
         &self,
         cx: &'a Codegen<'b>,
         container: &str,
+        uses: U,
     ) -> Result<Option<LlvmFunc<'a, 'b>>, SyntaxError> {
         // Check condition.
         if let Some((_, cond)) = self.attrs.condition() {
@@ -61,7 +62,7 @@ impl Function {
         // Build function name.
         let name = match self.attrs.ext() {
             Some((_, Extern::C)) => Cow::Borrowed(self.name.value()),
-            None => Cow::Owned(cx.mangle(&[], container, self)?),
+            None => Cow::Owned(cx.mangle(uses, container, self)?),
         };
 
         // Check if function already exists.
@@ -69,7 +70,7 @@ impl Function {
 
         if LlvmFunc::get(cx, &name).is_some() {
             return Err(SyntaxError::new(
-                self.name.span().clone(),
+                self.name.span(),
                 "multiple definition of the same name",
             ));
         }
@@ -112,7 +113,7 @@ impl Function {
             None => {
                 if self.attrs.ext().is_none() {
                     return Err(SyntaxError::new(
-                        self.name.span().clone(),
+                        self.name.span(),
                         "a body is required for non-extern or non-abstract",
                     ));
                 }

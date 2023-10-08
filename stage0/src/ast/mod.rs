@@ -10,7 +10,7 @@ pub use self::ty::*;
 pub use self::using::*;
 
 use crate::lexer::{
-    ClassKeyword, Identifier, ImplKeyword, Lexer, StructKeyword, SyntaxError, Token, UseKeyword,
+    ClassKeyword, Identifier, ImplKeyword, Lexer, StructKeyword, SyntaxError, Token,
 };
 use std::path::PathBuf;
 use thiserror::Error;
@@ -62,6 +62,10 @@ impl SourceFile {
         &self.path
     }
 
+    pub fn uses(&self) -> &[Use] {
+        self.uses.as_ref()
+    }
+
     pub fn ty(&self) -> Option<&TypeDefinition> {
         self.ty.as_ref()
     }
@@ -84,7 +88,10 @@ impl SourceFile {
             // Check token.
             match tok {
                 Token::AttributeName(name) => attrs = Some(Attributes::parse(&mut lex, name)?),
-                Token::UseKeyword(def) => self.uses.push(Self::parse_use(&mut lex, def)?),
+                Token::UseKeyword(def) => {
+                    self.uses
+                        .push(Use::parse(&mut lex, attrs.take().unwrap_or_default(), def)?)
+                }
                 Token::StructKeyword(def) => {
                     let name = lex.next_ident()?;
                     self.can_define_type(&name)?;
@@ -151,87 +158,6 @@ impl SourceFile {
         }
 
         Ok(())
-    }
-
-    fn parse_use(lex: &mut Lexer, def: UseKeyword) -> Result<Use, SyntaxError> {
-        // Get the package name.
-        let mut name = Vec::new();
-
-        match lex.next()? {
-            Some(Token::SelfKeyword(v)) => name.push(Token::SelfKeyword(v)),
-            Some(Token::Identifier(v)) => name.push(Token::Identifier(v)),
-            Some(t) => {
-                return Err(SyntaxError::new(
-                    t.span().clone(),
-                    "expect an identifer or self keyword",
-                ));
-            }
-            None => {
-                return Err(SyntaxError::new(
-                    def.span().clone(),
-                    "expect an identifer or self keyword after this",
-                ));
-            }
-        }
-
-        match lex.next()? {
-            Some(Token::FullStop(v)) => name.push(Token::FullStop(v)),
-            Some(t) => return Err(SyntaxError::new(t.span().clone(), "expect '.'")),
-            None => {
-                return Err(SyntaxError::new(
-                    lex.last().unwrap().clone(),
-                    "expect '.' after this",
-                ));
-            }
-        }
-
-        // Get item after the package name.
-        match lex.next()? {
-            Some(Token::Identifier(v)) => name.push(Token::Identifier(v)),
-            Some(t) => return Err(SyntaxError::new(t.span().clone(), "expect an identifer")),
-            None => {
-                return Err(SyntaxError::new(
-                    lex.last().unwrap().clone(),
-                    "expect an identifer after this",
-                ));
-            }
-        }
-
-        // Get remaining path.
-        loop {
-            let next = match lex.next()? {
-                Some(v) => v,
-                None => {
-                    return Err(SyntaxError::new(
-                        lex.last().unwrap().clone(),
-                        "expect ';' after this",
-                    ));
-                }
-            };
-
-            match next {
-                Token::FullStop(v) => {
-                    name.push(Token::FullStop(v));
-
-                    match lex.next()? {
-                        Some(Token::Identifier(v)) => name.push(Token::Identifier(v)),
-                        Some(t) => {
-                            return Err(SyntaxError::new(t.span().clone(), "expect an identifer"));
-                        }
-                        None => {
-                            return Err(SyntaxError::new(
-                                lex.last().unwrap().clone(),
-                                "expect an identifer after this",
-                            ));
-                        }
-                    }
-                }
-                Token::Semicolon(_) => break,
-                t => return Err(SyntaxError::new(t.span().clone(), "expect ';'")),
-            }
-        }
-
-        Ok(Use::new(def, Path::new(name), None))
     }
 
     fn parse_struct(

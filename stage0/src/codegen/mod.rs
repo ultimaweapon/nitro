@@ -141,7 +141,10 @@ impl<'a> Codegen<'a> {
         Ok(res)
     }
 
-    pub fn mangle(&self, uses: &[Use], ty: &str, mem: &Function) -> Result<String, SyntaxError> {
+    pub fn mangle<'b, U>(&self, uses: U, ty: &str, mem: &Function) -> Result<String, SyntaxError>
+    where
+        U: IntoIterator<Item = &'b Use> + Clone,
+    {
         let mut buf = String::new();
         let pkg = self.pkg.as_str();
 
@@ -176,7 +179,7 @@ impl<'a> Codegen<'a> {
                 match v.name() {
                     TypeName::Unit(_, _) => buf.push('U'),
                     TypeName::Never(_) => buf.push('N'),
-                    TypeName::Ident(p) => match self.resolve(uses, p) {
+                    TypeName::Ident(p) => match self.resolve(uses.clone(), p) {
                         Some((n, t)) => match t {
                             ResolvedType::Project(_) => Self::mangle_self(&mut buf, &n),
                             ResolvedType::External((p, t)) => Self::mangle_ext(&mut buf, p, t),
@@ -197,7 +200,7 @@ impl<'a> Codegen<'a> {
             match p.name() {
                 TypeName::Unit(_, _) => buf.push('U'),
                 TypeName::Never(_) => buf.push('N'),
-                TypeName::Ident(p) => match self.resolve(uses, p) {
+                TypeName::Ident(p) => match self.resolve(uses.clone(), p) {
                     Some((n, t)) => match t {
                         ResolvedType::Project(_) => Self::mangle_self(&mut buf, &n),
                         ResolvedType::External((p, t)) => Self::mangle_ext(&mut buf, p, t),
@@ -210,25 +213,26 @@ impl<'a> Codegen<'a> {
         Ok(buf)
     }
 
-    pub fn resolve(&self, uses: &[Use], name: &Path) -> Option<(String, &ResolvedType<'a>)> {
+    pub fn resolve<'b, U>(&self, uses: U, name: &Path) -> Option<(String, &ResolvedType<'a>)>
+    where
+        U: IntoIterator<Item = &'b Use>,
+    {
         // Resolve full name.
         let name = match name.as_local() {
             Some(name) => {
                 // Search from use declarations first to allow overrides.
                 let mut found = None;
 
-                for u in uses.iter().rev() {
+                for u in uses {
                     match u.rename() {
                         Some(v) => {
                             if v == name {
                                 found = Some(u);
-                                break;
                             }
                         }
                         None => {
                             if u.name().last() == name {
                                 found = Some(u);
-                                break;
                             }
                         }
                     }
