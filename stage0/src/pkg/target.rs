@@ -12,10 +12,7 @@ impl TargetResolver {
         Self {}
     }
 
-    pub fn resolve(
-        &mut self,
-        target: &Target,
-    ) -> Result<&'static PrimitiveTarget, TargetResolveError> {
+    pub fn resolve(&self, target: &Target) -> Result<&'static PrimitiveTarget, TargetResolveError> {
         match target {
             Target::Primitive(v) => Ok(v),
             Target::Custom(_) => todo!(),

@@ -145,6 +145,7 @@ impl<'a> Codegen<'a> {
     where
         U: IntoIterator<Item = &'b Use> + Clone,
     {
+        // TODO: Use different algorithm for the executable.
         let mut buf = String::new();
         let pkg = self.pkg.as_str();
 

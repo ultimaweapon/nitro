@@ -1,2 +1,2 @@
 #!/bin/sh -e
-./dist/bin/nitro build --export dist/share/nitro std
+./dist/bin/nitro build --pkg dist/share/nitro/nitro.npk std

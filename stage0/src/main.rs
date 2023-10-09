@@ -1,11 +1,11 @@
 use crate::ast::ParseError;
 use crate::ffi::llvm_init;
-use crate::pkg::DependencyResolver;
-use crate::project::{Project, ProjectBuildError, ProjectLoadError, ProjectType};
+use crate::pkg::{DependencyResolver, TargetResolver};
+use crate::project::{Project, ProjectBuildError, ProjectLoadError};
 use clap::{command, value_parser, Arg, ArgMatches, Command};
+use std::borrow::Cow;
 use std::error::Error;
 use std::fmt::Write;
-use std::fs::create_dir_all;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -26,14 +26,22 @@ fn main() -> ExitCode {
                 .about("Build a Nitro project")
                 .arg(
                     Arg::new("export")
-                        .help("Export executables or a package to the specified directory")
-                        .long("export")
-                        .value_name("PATH")
+                        .help("Export all binaries to the specified directory")
+                        .short('o')
+                        .long("outputs")
+                        .value_name("DIRECTORY")
+                        .value_parser(value_parser!(PathBuf)),
+                )
+                .arg(
+                    Arg::new("package")
+                        .help("Export a package to the specified file")
+                        .long("pkg")
+                        .value_name("FILE")
                         .value_parser(value_parser!(PathBuf)),
                 )
                 .arg(
                     Arg::new("project")
-                        .help("Path to the project")
+                        .help("Path to the project (default to current directory)")
                         .value_name("PATH")
                         .value_parser(value_parser!(PathBuf)),
                 ),
@@ -51,12 +59,20 @@ fn build(args: &ArgMatches) -> ExitCode {
     // Initialize LLVM.
     unsafe { llvm_init() };
 
+    // Get path to the project.
+    let path = match args.get_one::<PathBuf>("project") {
+        Some(v) => Cow::Borrowed(v),
+        None => Cow::Owned(std::env::current_dir().unwrap()),
+    };
+
+    // Setup target resolver.
+    let targets = TargetResolver::new();
+
     // Setup dependency resolver.
-    let mut resolver = DependencyResolver::new();
+    let deps = DependencyResolver::new();
 
     // Open the project.
-    let path = args.get_one::<PathBuf>("project").unwrap();
-    let mut project = match Project::open(&path, &mut resolver) {
+    let mut project = match Project::open(path.as_ref(), &targets, &deps) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("Cannot open {}: {}.", path.display(), join_nested(&e));
@@ -97,35 +113,23 @@ fn build(args: &ArgMatches) -> ExitCode {
         }
     };
 
-    // Export the project.
+    // Export the binaries.
     if let Some(path) = args.get_one::<PathBuf>("export") {
-        match project.meta().package().ty() {
-            ProjectType::Executable => {
-                // Export the project.
-                if let Err(e) = pkg.export(&path, &mut resolver) {
-                    eprintln!(
-                        "Cannot export the project to {}: {}.",
-                        path.display(),
-                        join_nested(&e)
-                    );
-                    return ExitCode::FAILURE;
-                }
-            }
-            ProjectType::Library => {
-                // Create a directory to pack the package.
-                if let Err(e) = create_dir_all(&path) {
-                    eprintln!("Cannot create {}: {}.", path.display(), e);
-                    return ExitCode::FAILURE;
-                }
+        if let Err(e) = pkg.export(&path, &targets, &deps) {
+            eprintln!(
+                "Cannot export the binaries to {}: {}.",
+                path.display(),
+                join_nested(&e)
+            );
+            return ExitCode::FAILURE;
+        }
+    }
 
-                // Pack the package.
-                let path = path.join(format!("{}.npk", project.meta().package().name()));
-
-                if let Err(e) = pkg.pack(&path) {
-                    eprintln!("Cannot pack {}: {}.", path.display(), join_nested(&e));
-                    return ExitCode::FAILURE;
-                }
-            }
+    // Export the package.
+    if let Some(path) = args.get_one::<PathBuf>("package") {
+        if let Err(e) = pkg.pack(&path) {
+            eprintln!("Cannot pack {}: {}.", path.display(), join_nested(&e));
+            return ExitCode::FAILURE;
         }
     }
 

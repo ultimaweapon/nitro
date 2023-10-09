@@ -1,24 +1,33 @@
 use crate::pkg::{PackageName, PackageVersion};
 use serde::Deserialize;
+use std::path::PathBuf;
 
-/// Contains information that was loaded from `.nitro` file.
+/// Contains information that was loaded from `Nitro.yml` file.
 #[derive(Deserialize)]
 pub struct ProjectMeta {
     package: ProjectPackage,
+    executable: Option<ProjectBinary>,
+    library: Option<ProjectBinary>,
 }
 
 impl ProjectMeta {
     pub fn package(&self) -> &ProjectPackage {
         &self.package
     }
+
+    pub fn executable(&self) -> Option<&ProjectBinary> {
+        self.executable.as_ref()
+    }
+
+    pub fn library(&self) -> Option<&ProjectBinary> {
+        self.library.as_ref()
+    }
 }
 
-/// A package table of `.nitro` file.
+/// Contains information of a package that the project will output.
 #[derive(Deserialize)]
 pub struct ProjectPackage {
     name: PackageName,
-    #[serde(rename = "type")]
-    ty: ProjectType,
     version: PackageVersion,
 }
 
@@ -27,21 +36,19 @@ impl ProjectPackage {
         &self.name
     }
 
-    pub fn ty(&self) -> ProjectType {
-        self.ty
-    }
-
     pub fn version(&self) -> &PackageVersion {
         &self.version
     }
 }
 
-/// Type of the project.
-#[derive(Deserialize, Clone, Copy, PartialEq, Eq)]
-pub enum ProjectType {
-    #[serde(rename = "exe")]
-    Executable,
+/// Contains information of the binary that the project will output.
+#[derive(Deserialize)]
+pub struct ProjectBinary {
+    sources: PathBuf,
+}
 
-    #[serde(rename = "lib")]
-    Library,
+impl ProjectBinary {
+    pub fn sources(&self) -> &PathBuf {
+        &self.sources
+    }
 }

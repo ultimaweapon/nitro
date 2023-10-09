@@ -20,7 +20,7 @@ mod ty;
 
 /// An unpacked Nitro package.
 ///
-/// One package can contains only a single executable and a single library, per architecture.
+/// One package can contains only a single executable and a single library per target.
 pub struct Package {
     meta: PackageMeta,
     exes: HashMap<Target, Binary<PathBuf>>,
@@ -127,7 +127,12 @@ impl Package {
         Ok(())
     }
 
-    pub fn export<T>(&self, to: T, deps: &DependencyResolver) -> Result<(), PackageExportError>
+    pub fn export<T>(
+        &self,
+        to: T,
+        targets: &TargetResolver,
+        deps: &DependencyResolver,
+    ) -> Result<(), PackageExportError>
     where
         T: AsRef<Path>,
     {
