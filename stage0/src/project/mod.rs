@@ -1,6 +1,6 @@
 pub use self::meta::*;
 
-use crate::ast::{ParseError, Public, SourceFile};
+use crate::ast::{ParseError, SourceFile};
 use crate::codegen::{BuildError, Codegen, TypeResolver};
 use crate::lexer::SyntaxError;
 use crate::pkg::{
@@ -8,6 +8,7 @@ use crate::pkg::{
     Package, PackageMeta, PackageName, PackageVersion, PrimitiveTarget, Target, TargetArch,
     TargetOs, TargetResolveError, TargetResolver, Type,
 };
+use crate::ty::Public;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::error::Error;

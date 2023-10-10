@@ -1,38 +1,37 @@
-use super::{Attributes, Representation};
+use super::Attributes;
 use crate::lexer::{Identifier, Span, StructKeyword};
 
-/// A struct.
-///
-/// Struct in Nitro is a value type the same as .NET and its memory layout is always the same as C.
-/// All fields must also be a struct and will always public.
-///
-/// Struct type cannot be a generic type and does not supports inheritance.
-pub enum Struct {
-    Primitive(Attributes, Representation, StructKeyword, Identifier),
-    Composite(Attributes, StructKeyword, Identifier),
+/// An implementation of [`crate::ty::Struct`].
+pub struct Struct {
+    attrs: Attributes,
+    def: StructKeyword,
+    name: Identifier,
 }
 
 impl Struct {
-    pub fn span(&self) -> &Span {
-        let def = match self {
-            Self::Primitive(_, _, d, _) => d,
-            Self::Composite(_, d, _) => d,
-        };
+    pub fn new(attrs: Attributes, def: StructKeyword, name: Identifier) -> Self {
+        Self { attrs, def, name }
+    }
 
-        def.span()
+    pub fn span(&self) -> &Span {
+        self.def.span()
     }
 
     pub fn attrs(&self) -> &Attributes {
-        match self {
-            Self::Primitive(a, _, _, _) => a,
-            Self::Composite(a, _, _) => a,
-        }
+        &self.attrs
     }
 
     pub fn name(&self) -> &Identifier {
-        match self {
-            Self::Primitive(_, _, _, i) => i,
-            Self::Composite(_, _, i) => i,
-        }
+        &self.name
+    }
+}
+
+impl crate::ty::Struct for Struct {
+    fn attrs(&self) -> &dyn crate::ty::Attributes {
+        &self.attrs
+    }
+
+    fn name(&self) -> &str {
+        self.name.value()
     }
 }

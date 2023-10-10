@@ -24,3 +24,13 @@ impl Class {
         &self.name
     }
 }
+
+impl crate::ty::Class for Class {
+    fn attrs(&self) -> &dyn crate::ty::Attributes {
+        &self.attrs
+    }
+
+    fn name(&self) -> &str {
+        self.name.value()
+    }
+}

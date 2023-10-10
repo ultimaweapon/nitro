@@ -167,21 +167,34 @@ impl SourceFile {
         name: Identifier,
     ) -> Result<Struct, SyntaxError> {
         // Check if a primitive struct.
-        if let Some((_, repr)) = attrs.repr() {
-            let repr = *repr;
-            lex.next_semicolon()?;
-            return Ok(Struct::Primitive(attrs, repr, def, name));
-        }
+        match lex.next()? {
+            Some(Token::Semicolon(_)) => {
+                if attrs.repr().is_none() {
+                    return Err(SyntaxError::new(
+                        name.span(),
+                        "primitive struct without repr attribute is not allowed",
+                    ));
+                }
+
+                return Ok(Struct::new(attrs, def, name));
+            }
+            Some(Token::OpenCurly(_)) => {}
+            Some(t) => return Err(SyntaxError::new(t.span(), "expect either ';' or '}'")),
+            None => {
+                return Err(SyntaxError::new(
+                    lex.last().unwrap(),
+                    "expect either ';' or '}' after this",
+                ));
+            }
+        };
 
         // Parse fields.
-        lex.next_oc()?;
-
         loop {
             let tok = match lex.next()? {
                 Some(v) => v,
                 None => {
                     return Err(SyntaxError::new(
-                        lex.last().unwrap().clone(),
+                        lex.last().unwrap(),
                         "expect '}' after this",
                     ));
                 }
@@ -189,11 +202,11 @@ impl SourceFile {
 
             match tok {
                 Token::CloseCurly(_) => break,
-                t => return Err(SyntaxError::new(t.span().clone(), "expect '}'")),
+                t => return Err(SyntaxError::new(t.span(), "expect '}'")),
             }
         }
 
-        Ok(Struct::Composite(attrs, def, name))
+        Ok(Struct::new(attrs, def, name))
     }
 
     fn parse_class(

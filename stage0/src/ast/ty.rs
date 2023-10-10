@@ -1,10 +1,11 @@
-use super::{Path, Representation, SourceFile, Struct, TypeDefinition, Use};
+use super::{Path, SourceFile, TypeDefinition, Use};
 use crate::codegen::{
     Codegen, LlvmI32, LlvmPtr, LlvmType, LlvmU64, LlvmU8, LlvmVoid, ResolvedType,
 };
 use crate::lexer::{
     Asterisk, CloseParenthesis, ExclamationMark, OpenParenthesis, Span, SyntaxError,
 };
+use crate::ty::{Representation, Struct};
 
 /// A type of something (e.g. variable).
 pub struct Type {
@@ -83,18 +84,14 @@ impl Type {
         ty: &SourceFile,
     ) -> LlvmType<'a, 'b> {
         match ty.ty().unwrap() {
-            TypeDefinition::Struct(v) => Self::build_internal_struct(cx, name, v),
+            TypeDefinition::Struct(v) => Self::build_struct(cx, v),
             TypeDefinition::Class(_) => todo!(),
         }
     }
 
-    fn build_internal_struct<'a, 'b: 'a>(
-        cx: &'a Codegen<'b>,
-        name: &str,
-        ty: &Struct,
-    ) -> LlvmType<'a, 'b> {
-        match ty {
-            Struct::Primitive(_, r, _, _) => match r {
+    fn build_struct<'a, 'b: 'a>(cx: &'a Codegen<'b>, ty: &dyn Struct) -> LlvmType<'a, 'b> {
+        match ty.attrs().repr() {
+            Some(v) => match v {
                 Representation::I32 => LlvmType::I32(LlvmI32::new(cx)),
                 Representation::U8 => LlvmType::U8(LlvmU8::new(cx)),
                 Representation::Un => match cx.pointer_size() {
@@ -102,7 +99,7 @@ impl Type {
                     _ => todo!(),
                 },
             },
-            Struct::Composite(_, _, _) => todo!(),
+            None => todo!(),
         }
     }
 }

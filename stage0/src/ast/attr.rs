@@ -1,5 +1,6 @@
 use super::Expression;
 use crate::lexer::{AttributeName, Lexer, SyntaxError, Token};
+use crate::ty::{Public, Representation};
 
 /// A collection of attributes.
 #[derive(Default)]
@@ -175,21 +176,17 @@ impl Attributes {
     }
 }
 
-/// Argument of `@pub`.
-#[derive(PartialEq, Eq)]
-pub enum Public {
-    External,
+impl crate::ty::Attributes for Attributes {
+    fn public(&self) -> Option<Public> {
+        self.public.as_ref().map(|v| v.1)
+    }
+
+    fn repr(&self) -> Option<Representation> {
+        self.repr.as_ref().map(|v| v.1)
+    }
 }
 
 /// Argument of `@ext`.
 pub enum Extern {
     C,
-}
-
-/// Argument of `@repr`
-#[derive(Clone, Copy)]
-pub enum Representation {
-    I32,
-    U8,
-    Un,
 }
