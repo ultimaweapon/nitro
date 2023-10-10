@@ -105,44 +105,28 @@ impl<'a> Project<'a> {
             let root = self.meta.library().unwrap().sources();
 
             for target in PrimitiveTarget::ALL.iter().map(|t| Target::Primitive(t)) {
-                // Create output directory.
-                let mut dir = root.join(".build");
-
-                dir.push(target.to_string());
-
-                if let Err(e) = create_dir_all(&dir) {
-                    return Err(ProjectBuildError::CreateDirectoryFailed(dir, e));
-                }
-
-                // Get primitive target.
-                let pt = match self.targets.resolve(&target) {
-                    Ok(v) => v,
-                    Err(e) => return Err(ProjectBuildError::ResolveTargetFailed(target, e)),
-                };
-
                 // Setup type resolver.
                 let mut resolver = TypeResolver::new();
 
                 resolver.populate_project_types(&self.lib);
 
                 // Compile.
-                let obj = dir.join(format!("{}.o", pkg.name()));
-                let types = self.compile(false, pt, &self.lib, &obj, &mut resolver)?;
+                let br = self.build_for(root, false, &target, &self.lib, &resolver)?;
 
-                // Prepare to link.
+                // Build linker command.
                 let mut args: Vec<Cow<'static, str>> = Vec::new();
-                let out = dir.join(match pt.os() {
+                let out = br.workspace.join(match br.target.os() {
                     TargetOs::Darwin => format!("lib{}.dylib", pkg.name()),
                     TargetOs::Linux => format!("lib{}.so", pkg.name()),
                     TargetOs::Win32 => format!("{}.dll", pkg.name()),
                 });
 
-                let linker = match pt.os() {
+                let linker = match br.target.os() {
                     TargetOs::Darwin => {
                         args.push("-o".into());
                         args.push(out.to_str().unwrap().to_owned().into());
                         args.push("-arch".into());
-                        args.push(match pt.arch() {
+                        args.push(match br.target.arch() {
                             TargetArch::AArch64 => "arm64".into(),
                             TargetArch::X86_64 => "x86_64".into(),
                         });
@@ -160,11 +144,14 @@ impl<'a> Project<'a> {
                         "ld.lld"
                     }
                     TargetOs::Win32 => {
-                        let def = dir.join(format!("{}.def", pkg.name()));
+                        let def = br.workspace.join(format!("{}.def", pkg.name()));
 
-                        if let Err(e) =
-                            Self::write_module_definition(pkg.name(), pkg.version(), &types, &def)
-                        {
+                        if let Err(e) = Self::write_module_definition(
+                            pkg.name(),
+                            pkg.version(),
+                            &br.exports,
+                            &def,
+                        ) {
                             return Err(ProjectBuildError::CreateModuleDefinitionFailed(def, e));
                         }
 
@@ -175,7 +162,7 @@ impl<'a> Project<'a> {
                     }
                 };
 
-                args.push(obj.to_str().unwrap().to_owned().into());
+                args.push(br.object.to_str().unwrap().to_owned().into());
 
                 // Link.
                 if let Err(e) = Self::link(linker, &args) {
@@ -186,7 +173,7 @@ impl<'a> Project<'a> {
                     .insert(
                         target,
                         Binary::new(
-                            Library::new(LibraryBinary::Bundle(out), types),
+                            Library::new(LibraryBinary::Bundle(out), br.exports),
                             HashSet::new()
                         )
                     )
@@ -199,44 +186,27 @@ impl<'a> Project<'a> {
             let root = self.meta.executable().unwrap().sources();
 
             for target in PrimitiveTarget::ALL.iter().map(|t| Target::Primitive(t)) {
-                // Create output directory.
-                let mut dir = root.join(".build");
-
-                dir.push(target.to_string());
-
-                if let Err(e) = create_dir_all(&dir) {
-                    return Err(ProjectBuildError::CreateDirectoryFailed(dir, e));
-                }
-
-                // Get primitive target.
-                let pt = match self.targets.resolve(&target) {
-                    Ok(v) => v,
-                    Err(e) => return Err(ProjectBuildError::ResolveTargetFailed(target, e)),
-                };
-
                 // Setup type resolver.
                 let mut resolver = TypeResolver::new();
 
                 resolver.populate_project_types(&self.exe);
 
                 // Compile.
-                let obj = dir.join(format!("{}.o", pkg.name()));
+                let br = self.build_for(root, true, &target, &self.exe, &resolver)?;
 
-                self.compile(true, pt, &self.exe, &obj, &mut resolver)?;
-
-                // Prepare to link.
+                // Build linker command.
                 let mut args: Vec<Cow<'static, str>> = Vec::new();
-                let out = match pt.os() {
-                    TargetOs::Darwin | TargetOs::Linux => dir.join(pkg.name().as_str()),
-                    TargetOs::Win32 => dir.join(format!("{}.exe", pkg.name())),
+                let out = match br.target.os() {
+                    TargetOs::Darwin | TargetOs::Linux => br.workspace.join(pkg.name().as_str()),
+                    TargetOs::Win32 => br.workspace.join(format!("{}.exe", pkg.name())),
                 };
 
-                let linker = match pt.os() {
+                let linker = match br.target.os() {
                     TargetOs::Darwin => {
                         args.push("-o".into());
                         args.push(out.to_str().unwrap().to_owned().into());
                         args.push("-arch".into());
-                        args.push(match pt.arch() {
+                        args.push(match br.target.arch() {
                             TargetArch::AArch64 => "arm64".into(),
                             TargetArch::X86_64 => "x86_64".into(),
                         });
@@ -257,7 +227,7 @@ impl<'a> Project<'a> {
                     }
                 };
 
-                args.push(obj.to_str().unwrap().to_owned().into());
+                args.push(br.object.to_str().unwrap().to_owned().into());
 
                 // Link.
                 if let Err(e) = Self::link(linker, &args) {
@@ -371,6 +341,45 @@ impl<'a> Project<'a> {
         }
 
         Ok(())
+    }
+
+    fn build_for<'b, R, S>(
+        &self,
+        root: R,
+        exe: bool,
+        target: &Target,
+        sources: S,
+        resolver: &'b TypeResolver<'_>,
+    ) -> Result<BuildResult, ProjectBuildError>
+    where
+        R: AsRef<Path>,
+        S: IntoIterator<Item = (&'b String, &'b SourceFile)>,
+    {
+        // Create workspace directory.
+        let mut ws = root.as_ref().join(".build");
+
+        ws.push(target.to_string());
+
+        if let Err(e) = create_dir_all(&ws) {
+            return Err(ProjectBuildError::CreateDirectoryFailed(ws, e));
+        }
+
+        // Get primitive target.
+        let pt = match self.targets.resolve(&target) {
+            Ok(v) => v,
+            Err(e) => return Err(ProjectBuildError::ResolveTargetFailed(target.clone(), e)),
+        };
+
+        // Compile.
+        let obj = ws.join(format!("{}.o", self.meta.package().name()));
+        let types = self.compile(exe, pt, sources, &obj, resolver)?;
+
+        Ok(BuildResult {
+            target: pt,
+            workspace: ws,
+            object: obj,
+            exports: types,
+        })
     }
 
     fn compile<'b, S, O>(
@@ -539,6 +548,13 @@ extern "C" {
 unsafe extern "C" fn nitro_string_set(s: &mut String, v: *const c_char) {
     s.clear();
     s.push_str(CStr::from_ptr(v).to_str().unwrap());
+}
+
+struct BuildResult {
+    target: &'static PrimitiveTarget,
+    workspace: PathBuf,
+    object: PathBuf,
+    exports: HashSet<ExportedType>,
 }
 
 /// Represents an error when a [`Project`] is failed to open.
