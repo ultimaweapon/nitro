@@ -25,10 +25,10 @@ impl Type {
         &self.name
     }
 
-    pub fn build<'a, 'b: 'a>(
+    pub fn build<'a, 'b: 'a, U: IntoIterator<Item = &'a Use>>(
         &self,
         cx: &'a Codegen<'b>,
-        uses: &[Use],
+        uses: U,
     ) -> Result<Option<LlvmType<'a, 'b>>, SyntaxError> {
         // Resolve base type.
         let mut ty = match &self.name {
@@ -36,7 +36,7 @@ impl Type {
             TypeName::Never(_) => return Ok(None),
             TypeName::Ident(n) => match cx.resolve(uses, n) {
                 Some((n, t)) => match t {
-                    ResolvedType::Project(v) => Self::build_project_type(cx, &n, v),
+                    ResolvedType::Internal(v) => Self::build_internal_type(cx, &n, v),
                     ResolvedType::External(_) => todo!(),
                 },
                 None => return Err(SyntaxError::new(n.span(), "type is undefined")),
@@ -63,7 +63,7 @@ impl Type {
                 let (n, t) = cx.resolve(uses, n).unwrap();
 
                 match t {
-                    ResolvedType::Project(f) => {
+                    ResolvedType::Internal(f) => {
                         Type::Local(ptr, n.strip_prefix("self.").unwrap().to_owned())
                     }
                     ResolvedType::External((p, t)) => Type::External(
@@ -77,18 +77,18 @@ impl Type {
         }
     }
 
-    fn build_project_type<'a, 'b: 'a>(
+    fn build_internal_type<'a, 'b: 'a>(
         cx: &'a Codegen<'b>,
         name: &str,
         ty: &SourceFile,
     ) -> LlvmType<'a, 'b> {
         match ty.ty().unwrap() {
-            TypeDefinition::Struct(v) => Self::build_project_struct(cx, name, v),
+            TypeDefinition::Struct(v) => Self::build_internal_struct(cx, name, v),
             TypeDefinition::Class(_) => todo!(),
         }
     }
 
-    fn build_project_struct<'a, 'b: 'a>(
+    fn build_internal_struct<'a, 'b: 'a>(
         cx: &'a Codegen<'b>,
         name: &str,
         ty: &Struct,

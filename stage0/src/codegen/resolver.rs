@@ -14,7 +14,11 @@ impl<'a> TypeResolver<'a> {
         }
     }
 
-    pub fn populate_project_types<S>(&mut self, set: S)
+    pub fn resolve(&self, name: &str) -> Option<&ResolvedType<'a>> {
+        self.types.get(name)
+    }
+
+    pub fn populate_internal_types<S>(&mut self, set: S)
     where
         S: IntoIterator<Item = (&'a String, &'a SourceFile)>,
     {
@@ -23,17 +27,30 @@ impl<'a> TypeResolver<'a> {
 
             key.push_str(&name);
 
-            assert!(self.types.insert(key, ResolvedType::Project(ty)).is_none());
+            assert!(self.types.insert(key, ResolvedType::Internal(ty)).is_none());
         }
     }
 
-    pub fn resolve(&self, name: &str) -> Option<&ResolvedType<'a>> {
-        self.types.get(name)
+    pub fn populate_external_types<S>(&mut self, pkg: &'a PackageMeta, types: S)
+    where
+        S: IntoIterator<Item = &'a ExportedType>,
+    {
+        for ty in types {
+            let mut key = pkg.name().as_str().to_owned();
+
+            key.push('.');
+            key.push_str(ty.name());
+
+            assert!(self
+                .types
+                .insert(key, ResolvedType::External((pkg, ty)))
+                .is_none());
+        }
     }
 }
 
-/// A type that was resolved by [`Resolver`].
+/// A type that was resolved by [`TypeResolver`].
 pub enum ResolvedType<'a> {
-    Project(&'a SourceFile),
+    Internal(&'a SourceFile),
     External((&'a PackageMeta, &'a ExportedType)),
 }

@@ -12,9 +12,19 @@ impl TargetResolver {
         Self {}
     }
 
-    pub fn resolve(&self, target: &Target) -> Result<&'static PrimitiveTarget, TargetResolveError> {
+    pub fn primitive(
+        &self,
+        target: &Target,
+    ) -> Result<&'static PrimitiveTarget, TargetResolveError> {
         match target {
             Target::Primitive(v) => Ok(v),
+            Target::Custom(_) => todo!(),
+        }
+    }
+
+    pub fn parent(&self, target: &Target) -> Result<Option<Target>, TargetResolveError> {
+        match target {
+            Target::Primitive(_) => Ok(None),
             Target::Custom(_) => todo!(),
         }
     }

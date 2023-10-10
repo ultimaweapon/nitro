@@ -1,16 +1,18 @@
 # Nitro
 
-Nitro is an experimental OOP language with the following goals:
+Nitro is an experimental **OOP language** with the following goals:
 
-- Compiled to native code.
-- [Non-fragile](https://en.wikipedia.org/wiki/Fragile_binary_interface_problem) and stable ABI.
-- A Nitro library will be distributed as a compiled binary similar to JAR or DLL file.
-- Built-in cross compilation (e.g. can produce Linux binary on Windows).
-- GC using reference counting.
-- Runtime reflection.
-- Error handling using exception.
-- No null value (except a pointer).
-- Option type.
+- [x] Compiled to **native code** like C/C++/Go or Rust.
+- [ ] **[Non-fragile](https://en.wikipedia.org/wiki/Fragile_binary_interface_problem)** and
+  **stable** ABI.
+- [x] A Nitro library will be distributed as a **compiled binary** similar to JAR or DLL file, not
+  as a source code like most languages did.
+- [x] Built-in **cross compilation** (e.g. one can produce Linux binary on Windows).
+- [ ] **GC** using reference counting.
+- [ ] **Runtime reflection**.
+- [ ] Error handling using **exception**.
+- [ ] **No null** value (except a pointer).
+- [ ] **Option type**.
 
 Nitro borrowed most of the syntax from Rust except:
 
@@ -23,8 +25,8 @@ Nitro borrowed most of the syntax from Rust except:
 
 ## Different from Java or C#
 
-The main different is Nitro compiled to native code instead of Java bytecode or Common Intermediate
-Language, which can be run without a VM. The benefit with this are:
+The main different is Nitro compiled to **native code** instead of Java bytecode or Common
+Intermediate Language, which can be run **without a VM**. The benefit with this are:
 
 - Low memory footprint.
 - Fast startup.
@@ -165,6 +167,12 @@ Set parameter `Type` to `debug` if you want to hack on Nitro (e.g. `.\build-cli.
 ```powershell
 .\build-dist.ps1
 ```
+
+## Financial support
+
+If you like Nitro please consider [support me](https://github.com/sponsors/ultimaweapon). I'm
+currently unemployed and looking for a job. If the supported amount is large enough I can stop
+applying for a job and continue working on this as a full-time.
 
 ## License
 

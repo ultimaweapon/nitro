@@ -182,7 +182,7 @@ impl<'a> Codegen<'a> {
                     TypeName::Never(_) => buf.push('N'),
                     TypeName::Ident(p) => match self.resolve(uses.clone(), p) {
                         Some((n, t)) => match t {
-                            ResolvedType::Project(_) => Self::mangle_self(&mut buf, &n),
+                            ResolvedType::Internal(_) => Self::mangle_self(&mut buf, &n),
                             ResolvedType::External((p, t)) => Self::mangle_ext(&mut buf, p, t),
                         },
                         None => return Err(SyntaxError::new(p.span(), "undefined type")),
@@ -203,7 +203,7 @@ impl<'a> Codegen<'a> {
                 TypeName::Never(_) => buf.push('N'),
                 TypeName::Ident(p) => match self.resolve(uses.clone(), p) {
                     Some((n, t)) => match t {
-                        ResolvedType::Project(_) => Self::mangle_self(&mut buf, &n),
+                        ResolvedType::Internal(_) => Self::mangle_self(&mut buf, &n),
                         ResolvedType::External((p, t)) => Self::mangle_ext(&mut buf, p, t),
                     },
                     None => return Err(SyntaxError::new(p.span(), "undefined type")),

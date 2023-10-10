@@ -97,6 +97,7 @@ impl<'a> Project<'a> {
 
     pub fn build(&self) -> Result<Package, ProjectBuildError> {
         let pkg = self.meta.package();
+        let meta = PackageMeta::new(pkg.name().clone(), pkg.version().clone());
         let mut exes = HashMap::new();
         let mut libs = HashMap::new();
 
@@ -105,10 +106,10 @@ impl<'a> Project<'a> {
             let root = self.meta.library().unwrap().sources();
 
             for target in PrimitiveTarget::ALL.iter().map(|t| Target::Primitive(t)) {
-                // Setup type resolver.
+                // Populate type resolver with internal types.
                 let mut resolver = TypeResolver::new();
 
-                resolver.populate_project_types(&self.lib);
+                resolver.populate_internal_types(&self.lib);
 
                 // Compile.
                 let br = self.build_for(root, false, &target, &self.lib, &resolver)?;
@@ -186,10 +187,38 @@ impl<'a> Project<'a> {
             let root = self.meta.executable().unwrap().sources();
 
             for target in PrimitiveTarget::ALL.iter().map(|t| Target::Primitive(t)) {
-                // Setup type resolver.
+                // Populate type resolver with internal types.
                 let mut resolver = TypeResolver::new();
 
-                resolver.populate_project_types(&self.exe);
+                resolver.populate_internal_types(&self.exe);
+
+                // Populate types from package library.
+                if !libs.is_empty() {
+                    // Resolve library.
+                    let mut target = target.clone();
+                    let lib = loop {
+                        if let Some(v) = libs.get(&target) {
+                            break Some(v);
+                        }
+
+                        target = match self.targets.parent(&target) {
+                            Ok(v) => match v {
+                                Some(v) => v,
+                                None => break None,
+                            },
+                            Err(e) => {
+                                return Err(ProjectBuildError::ResolveParentTargetFailed(
+                                    target, e,
+                                ));
+                            }
+                        };
+                    };
+
+                    // Add types to resolver.
+                    if let Some(lib) = lib {
+                        resolver.populate_external_types(&meta, lib.bin().types());
+                    }
+                }
 
                 // Compile.
                 let br = self.build_for(root, true, &target, &self.exe, &resolver)?;
@@ -239,9 +268,6 @@ impl<'a> Project<'a> {
                     .is_none());
             }
         }
-
-        // Construct the package.
-        let meta = PackageMeta::new(pkg.name().clone(), pkg.version().clone());
 
         Ok(Package::new(meta, exes, libs))
     }
@@ -365,9 +391,14 @@ impl<'a> Project<'a> {
         }
 
         // Get primitive target.
-        let pt = match self.targets.resolve(&target) {
+        let pt = match self.targets.primitive(&target) {
             Ok(v) => v,
-            Err(e) => return Err(ProjectBuildError::ResolveTargetFailed(target.clone(), e)),
+            Err(e) => {
+                return Err(ProjectBuildError::ResolvePrimitiveTargetFailed(
+                    target.clone(),
+                    e,
+                ));
+            }
         };
 
         // Compile.
@@ -592,8 +623,11 @@ pub enum ProjectLoadError {
 /// Represents an error when a [`Project`] is failed to build.
 #[derive(Debug, Error)]
 pub enum ProjectBuildError {
-    #[error("cannot resolve end target of {0}")]
-    ResolveTargetFailed(Target, #[source] TargetResolveError),
+    #[error("cannot resolve primitive target of {0}")]
+    ResolvePrimitiveTargetFailed(Target, #[source] TargetResolveError),
+
+    #[error("cannot resolve parent target of {0}")]
+    ResolveParentTargetFailed(Target, #[source] TargetResolveError),
 
     #[error("invalid syntax in {0}")]
     InvalidSyntax(PathBuf, #[source] SyntaxError),

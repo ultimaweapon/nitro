@@ -31,6 +31,10 @@ impl Library {
         Self { bin, types }
     }
 
+    pub fn types(&self) -> &HashSet<ExportedType> {
+        &self.types
+    }
+
     pub fn serialize<W: Write>(&self, mut w: W) -> Result<(), std::io::Error> {
         // Write magic.
         w.write_all(b"\x7FNLM")?;

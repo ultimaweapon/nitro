@@ -158,6 +158,10 @@ impl<T> Binary<T> {
     pub fn new(bin: T, deps: HashSet<Dependency>) -> Self {
         Self { bin, deps }
     }
+
+    pub fn bin(&self) -> &T {
+        &self.bin
+    }
 }
 
 /// Represents an error when a package is failed to open.

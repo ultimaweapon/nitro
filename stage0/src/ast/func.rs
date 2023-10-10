@@ -62,7 +62,7 @@ impl Function {
         // Build function name.
         let name = match self.attrs.ext() {
             Some((_, Extern::C)) => Cow::Borrowed(self.name.value()),
-            None => Cow::Owned(cx.mangle(uses, container, self)?),
+            None => Cow::Owned(cx.mangle(uses.clone(), container, self)?),
         };
 
         // Check if function already exists.
@@ -79,7 +79,7 @@ impl Function {
         let mut params = Vec::<LlvmType<'a, 'b>>::new();
 
         for p in &self.params {
-            let ty = match p.ty.build(cx, &[])? {
+            let ty = match p.ty.build(cx, uses.clone())? {
                 Some(v) => v,
                 None => {
                     return Err(SyntaxError::new(
@@ -95,7 +95,7 @@ impl Function {
         // Get return type.
         let mut never = false;
         let ret = match &self.ret {
-            Some(v) => match v.build(cx, &[])? {
+            Some(v) => match v.build(cx, uses)? {
                 Some(v) => v,
                 None => {
                     never = true;
