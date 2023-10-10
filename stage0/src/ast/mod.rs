@@ -1,28 +1,24 @@
 pub use self::attr::*;
-pub use self::class::*;
+pub use self::bt::*;
 pub use self::expr::*;
 pub use self::func::*;
 pub use self::imp::*;
 pub use self::path::*;
 pub use self::stmt::*;
-pub use self::struc::*;
 pub use self::ty::*;
 pub use self::using::*;
 
-use crate::lexer::{
-    ClassKeyword, Identifier, ImplKeyword, Lexer, StructKeyword, SyntaxError, Token,
-};
+use crate::lexer::{Identifier, ImplKeyword, Lexer, SyntaxError, Token};
 use std::path::PathBuf;
 use thiserror::Error;
 
 mod attr;
-mod class;
+mod bt;
 mod expr;
 mod func;
 mod imp;
 mod path;
 mod stmt;
-mod struc;
 mod ty;
 mod using;
 
@@ -95,20 +91,20 @@ impl SourceFile {
                 Token::StructKeyword(def) => {
                     let name = lex.next_ident()?;
                     self.can_define_type(&name)?;
-                    self.ty = Some(TypeDefinition::Struct(Self::parse_struct(
+                    self.ty = Some(TypeDefinition::Basic(Self::parse_basic(
                         &mut lex,
                         attrs.take().unwrap_or_default(),
-                        def,
+                        false,
                         name,
                     )?));
                 }
                 Token::ClassKeyword(def) => {
                     let name = lex.next_ident()?;
                     self.can_define_type(&name)?;
-                    self.ty = Some(TypeDefinition::Class(Self::parse_class(
+                    self.ty = Some(TypeDefinition::Basic(Self::parse_basic(
                         &mut lex,
                         attrs.take().unwrap_or_default(),
-                        def,
+                        true,
                         name,
                     )?));
                 }
@@ -160,23 +156,23 @@ impl SourceFile {
         Ok(())
     }
 
-    fn parse_struct(
+    fn parse_basic(
         lex: &mut Lexer,
         attrs: Attributes,
-        def: StructKeyword,
+        class: bool,
         name: Identifier,
-    ) -> Result<Struct, SyntaxError> {
-        // Check if a primitive struct.
-        match lex.next()? {
+    ) -> Result<BasicType, SyntaxError> {
+        // Check if body available.
+        let tok = match lex.next()? {
             Some(Token::Semicolon(_)) => {
-                if attrs.repr().is_none() {
+                if !class && attrs.repr().is_none() {
                     return Err(SyntaxError::new(
                         name.span(),
                         "primitive struct without repr attribute is not allowed",
                     ));
                 }
 
-                return Ok(Struct::new(attrs, def, name));
+                return Ok(BasicType::new(attrs, class, name));
             }
             Some(Token::OpenCurly(_)) => {}
             Some(t) => return Err(SyntaxError::new(t.span(), "expect either ';' or '}'")),
@@ -206,57 +202,7 @@ impl SourceFile {
             }
         }
 
-        Ok(Struct::new(attrs, def, name))
-    }
-
-    fn parse_class(
-        lex: &mut Lexer,
-        attrs: Attributes,
-        def: ClassKeyword,
-        name: Identifier,
-    ) -> Result<Class, SyntaxError> {
-        // Check if zero-sized class. A zero-sized class cannot be instantiate. They act as a
-        // container for static methods.
-        let tok = match lex.next()? {
-            Some(v) => v,
-            None => {
-                return Err(SyntaxError::new(
-                    name.span().clone(),
-                    "expect either ';' or '{' after the class name",
-                ));
-            }
-        };
-
-        match tok {
-            Token::Semicolon(_) => return Ok(Class::new(attrs, def, name)),
-            Token::OpenCurly(_) => {}
-            v => {
-                return Err(SyntaxError::new(
-                    v.span().clone(),
-                    "expect either ';' or '{'",
-                ));
-            }
-        }
-
-        // Parse fields.
-        loop {
-            let tok = match lex.next()? {
-                Some(v) => v,
-                None => {
-                    return Err(SyntaxError::new(
-                        lex.last().unwrap().clone(),
-                        "expect an '}'",
-                    ));
-                }
-            };
-
-            match tok {
-                Token::CloseCurly(_) => break,
-                t => return Err(SyntaxError::new(t.span().clone(), "syntax error")),
-            }
-        }
-
-        Ok(Class::new(attrs, def, name))
+        Ok(BasicType::new(attrs, class, name))
     }
 
     fn parse_type_impl(
@@ -512,22 +458,19 @@ impl SourceFile {
 
 /// A type definition in a source file.
 pub enum TypeDefinition {
-    Struct(Struct),
-    Class(Class),
+    Basic(BasicType),
 }
 
 impl TypeDefinition {
     pub fn attrs(&self) -> &Attributes {
         match self {
-            Self::Struct(v) => v.attrs(),
-            Self::Class(v) => v.attrs(),
+            Self::Basic(v) => v.attrs(),
         }
     }
 
     pub fn name(&self) -> &Identifier {
         match self {
-            Self::Struct(v) => v.name(),
-            Self::Class(v) => v.name(),
+            Self::Basic(v) => v.name(),
         }
     }
 }

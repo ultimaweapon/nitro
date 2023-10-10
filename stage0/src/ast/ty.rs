@@ -5,7 +5,7 @@ use crate::codegen::{
 use crate::lexer::{
     Asterisk, CloseParenthesis, ExclamationMark, OpenParenthesis, Span, SyntaxError,
 };
-use crate::ty::{Representation, Struct};
+use crate::ty::{BasicType, Representation};
 
 /// A type of something (e.g. variable).
 pub struct Type {
@@ -84,12 +84,23 @@ impl Type {
         ty: &SourceFile,
     ) -> LlvmType<'a, 'b> {
         match ty.ty().unwrap() {
-            TypeDefinition::Struct(v) => Self::build_struct(cx, v),
-            TypeDefinition::Class(_) => todo!(),
+            TypeDefinition::Basic(v) => {
+                if v.is_ref() {
+                    todo!()
+                } else {
+                    Self::build_struct(cx, name, v)
+                }
+            }
         }
     }
 
-    fn build_struct<'a, 'b: 'a>(cx: &'a Codegen<'b>, ty: &dyn Struct) -> LlvmType<'a, 'b> {
+    fn build_struct<'a, 'b: 'a>(
+        cx: &'a Codegen<'b>,
+        name: &str,
+        ty: &dyn BasicType,
+    ) -> LlvmType<'a, 'b> {
+        assert!(!ty.is_ref());
+
         match ty.attrs().repr() {
             Some(v) => match v {
                 Representation::I32 => LlvmType::I32(LlvmI32::new(cx)),

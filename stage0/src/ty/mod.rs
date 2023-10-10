@@ -1,7 +1,5 @@
 pub use self::attr::*;
-pub use self::class::*;
-pub use self::struc::*;
+pub use self::basic::*;
 
 mod attr;
-mod class;
-mod struc;
+mod basic;
