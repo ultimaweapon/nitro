@@ -1,0 +1,7 @@
+--- !ifs-v1
+IfsVersion:      3.0
+SoName:          libc.so.6
+Target:          { ObjectFormat: ELF }
+Symbols:
+  - { Name: exit, Type: Func }
+...

@@ -167,7 +167,7 @@ impl<'a> Codegen<'a> {
         };
 
         // Create a function.
-        let name = CStr::from_bytes_with_nul(b"_main\0").unwrap();
+        let name = CStr::from_bytes_with_nul(b"main\0").unwrap();
         let ret = LlvmType::Void(LlvmVoid::new(self));
         let mut func = LlvmFunc::new(self, name, &[], ret);
 

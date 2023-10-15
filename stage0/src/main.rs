@@ -6,7 +6,7 @@ use clap::{command, value_parser, Arg, ArgMatches, Command};
 use std::borrow::Cow;
 use std::error::Error;
 use std::fmt::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 mod ast;
@@ -48,14 +48,51 @@ fn main() -> ExitCode {
         )
         .get_matches();
 
+    // Get path to stubs.
+    let exe = match std::env::current_exe() {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Cannot get path of the executable: {}.", join_nested(&e));
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let meta = match exe.symlink_metadata() {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!(
+                "Cannot get metadata of {}: {}.",
+                exe.display(),
+                join_nested(&e)
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let exe = if !meta.is_symlink() {
+        exe
+    } else {
+        match exe.read_link() {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!(
+                    "Cannot read the target of {}: {}.",
+                    exe.display(),
+                    join_nested(&e)
+                );
+                return ExitCode::FAILURE;
+            }
+        }
+    };
+
     // Execute the command.
     match args.subcommand().unwrap() {
-        ("build", args) => build(args),
+        ("build", args) => build(args, &exe),
         _ => todo!(),
     }
 }
 
-fn build(args: &ArgMatches) -> ExitCode {
+fn build(args: &ArgMatches, exe: &Path) -> ExitCode {
     // Initialize LLVM.
     unsafe { llvm_init() };
 
@@ -68,11 +105,17 @@ fn build(args: &ArgMatches) -> ExitCode {
     // Setup target resolver.
     let targets = TargetResolver::new();
 
+    // Get path to stubs.
+    let mut stubs = exe.parent().unwrap().parent().unwrap().join("share");
+
+    stubs.push("nitro");
+    stubs.push("stub");
+
     // Setup dependency resolver.
     let deps = DependencyResolver::new();
 
     // Open the project.
-    let mut project = match Project::open(path.as_ref(), &targets, &deps) {
+    let mut project = match Project::open(path.as_ref(), &targets, &stubs, &deps) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("Cannot open {}: {}.", path.display(), join_nested(&e));

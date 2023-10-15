@@ -1,0 +1,3 @@
+NAME msvcrt
+EXPORTS
+    exit

@@ -115,6 +115,10 @@ impl PrimitiveTarget {
     pub fn os(&self) -> TargetOs {
         self.os
     }
+
+    pub fn env(&self) -> Option<TargetEnv> {
+        self.env
+    }
 }
 
 impl Display for PrimitiveTarget {

@@ -5,7 +5,7 @@ use crate::codegen::{BuildError, Codegen, TypeResolver};
 use crate::lexer::SyntaxError;
 use crate::pkg::{
     Binary, DependencyResolver, Library, LibraryBinary, Package, PackageMeta, PackageName,
-    PackageVersion, PrimitiveTarget, Target, TargetArch, TargetOs, TargetResolveError,
+    PackageVersion, PrimitiveTarget, Target, TargetArch, TargetEnv, TargetOs, TargetResolveError,
     TargetResolver, TypeDeclaration,
 };
 use std::borrow::Cow;
@@ -28,6 +28,7 @@ pub struct Project<'a> {
     exe: HashMap<String, SourceFile>,
     lib: HashMap<String, SourceFile>,
     targets: &'a TargetResolver,
+    stubs: &'a Path,
     deps: &'a DependencyResolver,
 }
 
@@ -35,6 +36,7 @@ impl<'a> Project<'a> {
     pub fn open<P: Into<PathBuf>>(
         path: P,
         targets: &'a TargetResolver,
+        stubs: &'a Path,
         deps: &'a DependencyResolver,
     ) -> Result<Self, ProjectOpenError> {
         // Open the project.
@@ -61,6 +63,7 @@ impl<'a> Project<'a> {
             exe: HashMap::new(),
             lib: HashMap::new(),
             targets,
+            stubs,
             deps,
         })
     }
@@ -111,64 +114,9 @@ impl<'a> Project<'a> {
 
                 resolver.populate_internal_types(&self.lib);
 
-                // Compile.
+                // Build.
                 let br = self.build_for(root, false, &target, &self.lib, &resolver)?;
-
-                // Build linker command.
-                let mut args: Vec<Cow<'static, str>> = Vec::new();
-                let out = br.workspace.join(match br.target.os() {
-                    TargetOs::Darwin => format!("lib{}.dylib", pkg.name()),
-                    TargetOs::Linux => format!("lib{}.so", pkg.name()),
-                    TargetOs::Win32 => format!("{}.dll", pkg.name()),
-                });
-
-                let linker = match br.target.os() {
-                    TargetOs::Darwin => {
-                        args.push("-o".into());
-                        args.push(out.to_str().unwrap().to_owned().into());
-                        args.push("-arch".into());
-                        args.push(match br.target.arch() {
-                            TargetArch::AArch64 => "arm64".into(),
-                            TargetArch::X86_64 => "x86_64".into(),
-                        });
-                        args.push("-platform_version".into());
-                        args.push("macos".into());
-                        args.push("10".into());
-                        args.push("11".into());
-                        args.push("-dylib".into());
-                        "ld64.lld"
-                    }
-                    TargetOs::Linux => {
-                        args.push("-o".into());
-                        args.push(out.to_str().unwrap().to_owned().into());
-                        args.push("--shared".into());
-                        "ld.lld"
-                    }
-                    TargetOs::Win32 => {
-                        let def = br.workspace.join(format!("{}.def", pkg.name()));
-
-                        if let Err(e) = Self::write_module_definition(
-                            pkg.name(),
-                            pkg.version(),
-                            &br.exports,
-                            &def,
-                        ) {
-                            return Err(ProjectBuildError::CreateModuleDefinitionFailed(def, e));
-                        }
-
-                        args.push(format!("/out:{}", out.to_str().unwrap()).into());
-                        args.push("/dll".into());
-                        args.push(format!("/def:{}", def.to_str().unwrap()).into());
-                        "lld-link"
-                    }
-                };
-
-                args.push(br.object.to_str().unwrap().to_owned().into());
-
-                // Link.
-                if let Err(e) = Self::link(linker, &args) {
-                    return Err(ProjectBuildError::LinkFailed(out, e));
-                }
+                let out = self.link_lib(&br)?;
 
                 assert!(libs
                     .insert(
@@ -431,26 +379,18 @@ impl<'a> Project<'a> {
         let mut args: Vec<Cow<'static, str>> = Vec::new();
         let linker = match br.target.os() {
             TargetOs::Darwin => {
-                args.push("-o".into());
-                args.push(out.to_str().unwrap().to_owned().into());
-                args.push("-arch".into());
-                args.push(match br.target.arch() {
-                    TargetArch::AArch64 => "arm64".into(),
-                    TargetArch::X86_64 => "x86_64".into(),
-                });
-                args.push("-platform_version".into());
-                args.push("macos".into());
-                args.push("10".into());
-                args.push("11".into());
+                self.set_link_args_darwin(&mut args, br.target, &out);
                 "ld64.lld"
             }
             TargetOs::Linux => {
-                args.push("-o".into());
-                args.push(out.to_str().unwrap().to_owned().into());
+                self.set_link_args_linux(&mut args, br.target, &out);
+                args.push("--entry=main".into());
+                args.push("--dynamic-linker=/lib64/ld-linux-x86-64.so.2".into());
                 "ld.lld"
             }
             TargetOs::Win32 => {
-                args.push(format!("/out:{}", out.to_str().unwrap()).into());
+                self.set_link_args_win32(&mut args, br.target, &out);
+                args.push("/entry:main".into());
                 "lld-link"
             }
         };
@@ -462,6 +402,119 @@ impl<'a> Project<'a> {
             Ok(_) => Ok(out),
             Err(e) => Err(ProjectBuildError::LinkFailed(out, e)),
         }
+    }
+
+    fn link_lib(&self, br: &BuildResult) -> Result<PathBuf, ProjectBuildError> {
+        // Get output path.
+        let pkg = self.meta.package();
+        let out = br.workspace.join(match br.target.os() {
+            TargetOs::Darwin => format!("lib{}.dylib", pkg.name()),
+            TargetOs::Linux => format!("lib{}.so", pkg.name()),
+            TargetOs::Win32 => format!("{}.dll", pkg.name()),
+        });
+
+        // Build linker command.
+        let mut args: Vec<Cow<'static, str>> = Vec::new();
+        let linker = match br.target.os() {
+            TargetOs::Darwin => {
+                self.set_link_args_darwin(&mut args, br.target, &out);
+                args.push("-dylib".into());
+                "ld64.lld"
+            }
+            TargetOs::Linux => {
+                self.set_link_args_linux(&mut args, br.target, &out);
+                args.push("--shared".into());
+                "ld.lld"
+            }
+            TargetOs::Win32 => {
+                let def = br.workspace.join(format!("{}.def", pkg.name()));
+
+                if let Err(e) =
+                    Self::write_module_definition(pkg.name(), pkg.version(), &br.exports, &def)
+                {
+                    return Err(ProjectBuildError::CreateModuleDefinitionFailed(def, e));
+                }
+
+                self.set_link_args_win32(&mut args, br.target, &out);
+                args.push("/dll".into());
+                args.push(format!("/def:{}", def.to_str().unwrap()).into());
+                "lld-link"
+            }
+        };
+
+        args.push(br.object.to_str().unwrap().to_owned().into());
+
+        // Link.
+        match Self::link(linker, &args) {
+            Ok(_) => Ok(out),
+            Err(e) => Err(ProjectBuildError::LinkFailed(out, e)),
+        }
+    }
+
+    fn set_link_args_darwin(
+        &self,
+        args: &mut Vec<Cow<'static, str>>,
+        target: &'static PrimitiveTarget,
+        out: &Path,
+    ) {
+        args.push("-o".into());
+        args.push(out.to_str().unwrap().to_owned().into());
+        args.push("-arch".into());
+        args.push(match target.arch() {
+            TargetArch::AArch64 => "arm64".into(),
+            TargetArch::X86_64 => "x86_64".into(),
+        });
+        args.push("-platform_version".into());
+        args.push("macos".into());
+        args.push("10".into());
+        args.push("11".into());
+        args.push("-lSystem".into());
+        args.push("-L".into());
+        args.push(
+            self.stubs
+                .join("darwin")
+                .into_os_string()
+                .into_string()
+                .unwrap()
+                .into(),
+        );
+    }
+
+    fn set_link_args_linux(
+        &self,
+        args: &mut Vec<Cow<'static, str>>,
+        target: &'static PrimitiveTarget,
+        out: &Path,
+    ) {
+        let stubs = self
+            .stubs
+            .join(match (target.env().unwrap(), target.arch()) {
+                (TargetEnv::Gnu, TargetArch::X86_64) => "linux-gnu-x86_64",
+                _ => todo!(),
+            });
+
+        args.push("-o".into());
+        args.push(out.to_str().unwrap().to_owned().into());
+        args.push("-l".into());
+        args.push("c".into());
+        args.push("-L".into());
+        args.push(stubs.into_os_string().into_string().unwrap().into());
+    }
+
+    fn set_link_args_win32(
+        &self,
+        args: &mut Vec<Cow<'static, str>>,
+        target: &'static PrimitiveTarget,
+        out: &Path,
+    ) {
+        let stubs = self.stubs.join(match target.arch() {
+            TargetArch::X86_64 => "win32-x86_64",
+            _ => todo!(),
+        });
+
+        args.push(format!("/out:{}", out.to_str().unwrap()).into());
+        args.push(format!("/libpath:{}", stubs.to_str().unwrap()).into());
+        args.push("/defaultlib:msvcrt".into());
     }
 
     fn link(linker: &str, args: &[Cow<'static, str>]) -> Result<(), LinkError> {
