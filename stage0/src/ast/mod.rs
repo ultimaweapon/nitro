@@ -70,7 +70,7 @@ impl SourceFile {
 
     pub fn build<'a, 'b: 'a>(
         &self,
-        cg: &'a Codegen<'b>,
+        cg: &'a mut Codegen<'b>,
     ) -> Result<Option<TypeDeclaration>, SyntaxError> {
         // Get fully qualified type name.
         let ty = self.ty.as_ref().unwrap();

@@ -1,7 +1,7 @@
 use super::{BasicBlock, Codegen};
 use crate::ffi::{
-    llvm_builder_append_block, llvm_builder_dispose, llvm_builder_new, llvm_builder_ret,
-    llvm_builder_ret_void,
+    llvm_builder_append_block, llvm_builder_call, llvm_builder_dispose, llvm_builder_new,
+    llvm_builder_ret, llvm_builder_ret_void,
 };
 use std::marker::PhantomData;
 
@@ -21,6 +21,14 @@ impl<'a, 'b: 'a> Builder<'a, 'b> {
             raw,
             phantom: PhantomData,
         }
+    }
+
+    pub fn call(
+        &mut self,
+        func: *mut crate::ffi::LlvmFunction,
+        args: &[*mut crate::ffi::LlvmValue],
+    ) -> *mut crate::ffi::LlvmCall {
+        unsafe { llvm_builder_call(self.raw, func, args.as_ptr(), args.len()) }
     }
 
     pub fn ret_void(&mut self) -> *mut crate::ffi::LlvmReturn {

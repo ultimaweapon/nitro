@@ -26,6 +26,13 @@ impl<'a, 'b: 'a> LlvmType<'a, 'b> {
             Self::Ptr(v) => v.raw as _,
         }
     }
+
+    pub fn is_i32(&self) -> bool {
+        match self {
+            Self::I32(_) => true,
+            _ => false,
+        }
+    }
 }
 
 /// An unit type.

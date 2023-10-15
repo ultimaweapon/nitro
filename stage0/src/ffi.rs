@@ -47,12 +47,19 @@ extern "C" {
     ) -> *mut LlvmFunction;
     pub fn llvm_function_append(f: *mut LlvmFunction, bb: *mut LlvmBlock);
     pub fn llvm_function_set_stdcall(f: *mut LlvmFunction);
+    pub fn llvm_function_set_noreturn(f: *mut LlvmFunction);
     pub fn llvm_integer_const(ty: *mut LlvmInteger, val: u64, sign: bool) -> *mut LlvmConstInt;
     pub fn llvm_block_new(cx: *mut LlvmContext) -> *mut LlvmBlock;
     pub fn llvm_block_dispose(bb: *mut LlvmBlock);
     pub fn llvm_builder_new(cx: *mut LlvmContext) -> *mut LlvmBuilder;
     pub fn llvm_builder_dispose(ib: *mut LlvmBuilder);
     pub fn llvm_builder_append_block(ib: *mut LlvmBuilder, bb: *mut LlvmBlock);
+    pub fn llvm_builder_call(
+        ib: *mut LlvmBuilder,
+        func: *mut LlvmFunction,
+        args: *const *mut LlvmValue,
+        nargs: usize,
+    ) -> *mut LlvmCall;
     pub fn llvm_builder_ret_void(ib: *mut LlvmBuilder) -> *mut LlvmReturn;
     pub fn llvm_builder_ret(ib: *mut LlvmBuilder, v: *mut LlvmValue) -> *mut LlvmReturn;
     pub fn ZSTD_createCStream() -> *mut ZstdContex;
@@ -83,6 +90,7 @@ pub struct LlvmFunction(());
 pub struct LlvmConstInt(());
 pub struct LlvmBlock(());
 pub struct LlvmBuilder(());
+pub struct LlvmCall(());
 pub struct LlvmReturn(());
 pub struct ZstdContex(());
 

@@ -53,6 +53,10 @@ impl Attributes {
         self.repr.as_ref()
     }
 
+    pub fn entry(&self) -> Option<&AttributeName> {
+        self.entry.as_ref()
+    }
+
     pub fn run_condition(&self, cg: &Codegen) -> Result<bool, SyntaxError> {
         // Always return true if no condition.
         let cond = match &self.condition {

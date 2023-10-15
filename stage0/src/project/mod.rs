@@ -220,48 +220,9 @@ impl<'a> Project<'a> {
                     }
                 }
 
-                // Compile.
+                // Build.
                 let br = self.build_for(root, true, &target, &self.exe, &resolver)?;
-
-                // Build linker command.
-                let mut args: Vec<Cow<'static, str>> = Vec::new();
-                let out = match br.target.os() {
-                    TargetOs::Darwin | TargetOs::Linux => br.workspace.join(pkg.name().as_str()),
-                    TargetOs::Win32 => br.workspace.join(format!("{}.exe", pkg.name())),
-                };
-
-                let linker = match br.target.os() {
-                    TargetOs::Darwin => {
-                        args.push("-o".into());
-                        args.push(out.to_str().unwrap().to_owned().into());
-                        args.push("-arch".into());
-                        args.push(match br.target.arch() {
-                            TargetArch::AArch64 => "arm64".into(),
-                            TargetArch::X86_64 => "x86_64".into(),
-                        });
-                        args.push("-platform_version".into());
-                        args.push("macos".into());
-                        args.push("10".into());
-                        args.push("11".into());
-                        "ld64.lld"
-                    }
-                    TargetOs::Linux => {
-                        args.push("-o".into());
-                        args.push(out.to_str().unwrap().to_owned().into());
-                        "ld.lld"
-                    }
-                    TargetOs::Win32 => {
-                        args.push(format!("/out:{}", out.to_str().unwrap()).into());
-                        "lld-link"
-                    }
-                };
-
-                args.push(br.object.to_str().unwrap().to_owned().into());
-
-                // Link.
-                if let Err(e) = Self::link(linker, &args) {
-                    return Err(ProjectBuildError::LinkFailed(out, e));
-                }
+                let out = self.link_exe(br)?;
 
                 assert!(exes
                     .insert(target, Binary::new(out, HashSet::new()))
@@ -427,18 +388,18 @@ impl<'a> Project<'a> {
     {
         // Setup codegen context.
         let pkg = self.meta.package();
-        let mut cx = Codegen::new(pkg.name(), pkg.version(), target, exe, resolver);
+        let mut cg = Codegen::new(pkg.name(), pkg.version(), target, exe, resolver);
 
         // Compile source files.
         let mut types = HashSet::new();
 
         for (fqtn, src) in sources {
-            cx.set_namespace(match fqtn.rfind('.') {
+            cg.set_namespace(match fqtn.rfind('.') {
                 Some(i) => &fqtn[..i],
                 None => "",
             });
 
-            match src.build(&cx) {
+            match src.build(&mut cg) {
                 Ok(v) => {
                     if let Some(v) = v {
                         assert!(types.insert(v));
@@ -451,11 +412,56 @@ impl<'a> Project<'a> {
         // Build the object file.
         let obj = output.as_ref();
 
-        if let Err(e) = cx.build(obj) {
+        if let Err(e) = cg.build(obj) {
             return Err(ProjectBuildError::BuildFailed(obj.to_owned(), e));
         }
 
         Ok(types)
+    }
+
+    fn link_exe(&self, br: BuildResult) -> Result<PathBuf, ProjectBuildError> {
+        // Get output path.
+        let pkg = self.meta.package();
+        let out = match br.target.os() {
+            TargetOs::Darwin | TargetOs::Linux => br.workspace.join(pkg.name().as_str()),
+            TargetOs::Win32 => br.workspace.join(format!("{}.exe", pkg.name())),
+        };
+
+        // Build linker command.
+        let mut args: Vec<Cow<'static, str>> = Vec::new();
+        let linker = match br.target.os() {
+            TargetOs::Darwin => {
+                args.push("-o".into());
+                args.push(out.to_str().unwrap().to_owned().into());
+                args.push("-arch".into());
+                args.push(match br.target.arch() {
+                    TargetArch::AArch64 => "arm64".into(),
+                    TargetArch::X86_64 => "x86_64".into(),
+                });
+                args.push("-platform_version".into());
+                args.push("macos".into());
+                args.push("10".into());
+                args.push("11".into());
+                "ld64.lld"
+            }
+            TargetOs::Linux => {
+                args.push("-o".into());
+                args.push(out.to_str().unwrap().to_owned().into());
+                "ld.lld"
+            }
+            TargetOs::Win32 => {
+                args.push(format!("/out:{}", out.to_str().unwrap()).into());
+                "lld-link"
+            }
+        };
+
+        args.push(br.object.to_str().unwrap().to_owned().into());
+
+        // Link.
+        match Self::link(linker, &args) {
+            Ok(_) => Ok(out),
+            Err(e) => Err(ProjectBuildError::LinkFailed(out, e)),
+        }
     }
 
     fn link(linker: &str, args: &[Cow<'static, str>]) -> Result<(), LinkError> {

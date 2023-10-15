@@ -37,7 +37,7 @@ impl Function {
 
     pub fn build<'a, 'b: 'a, U: IntoIterator<Item = &'a Use> + Clone>(
         &self,
-        cx: &'a Codegen<'b>,
+        cx: &mut Codegen<'b>,
         container: &str,
         uses: U,
     ) -> Result<Option<crate::pkg::Function>, SyntaxError> {
@@ -86,13 +86,46 @@ impl Function {
         };
 
         // Check if function already exists.
-        let name = CString::new(name.as_ref()).unwrap();
-
-        if LlvmFunc::get(cx, &name).is_some() {
+        if LlvmFunc::get(cx, CString::new(name.as_ref()).unwrap()).is_some() {
             return Err(SyntaxError::new(
                 self.name.span(),
                 "multiple definition of the same name",
             ));
+        }
+
+        // Get return type.
+        let mut never = false;
+        let ret = match &self.ret {
+            Some(v) => match v.build(cx, uses.clone())? {
+                Some(v) => v,
+                None => {
+                    never = true;
+                    LlvmType::Void(LlvmVoid::new(cx))
+                }
+            },
+            None => LlvmType::Void(LlvmVoid::new(cx)),
+        };
+
+        // Check if entry point.
+        let entry = self.attrs.entry().is_some();
+
+        if entry {
+            if !cx.entry().is_empty() {
+                return Err(SyntaxError::new(
+                    self.name.span(),
+                    "more than one entry point has been defined",
+                ));
+            } else if !ret.is_i32() {
+                return Err(SyntaxError::new(
+                    self.name.span(),
+                    "the entry point must have nitro.Int32 as a return type",
+                ));
+            } else if !self.params.is_empty() {
+                return Err(SyntaxError::new(
+                    self.name.span(),
+                    "the entry point must have zero parameters",
+                ));
+            }
         }
 
         // Get params.
@@ -112,21 +145,8 @@ impl Function {
             params.push(ty);
         }
 
-        // Get return type.
-        let mut never = false;
-        let ret = match &self.ret {
-            Some(v) => match v.build(cx, uses)? {
-                Some(v) => v,
-                None => {
-                    never = true;
-                    LlvmType::Void(LlvmVoid::new(cx))
-                }
-            },
-            None => LlvmType::Void(LlvmVoid::new(cx)),
-        };
-
         // Create a function.
-        let mut func = LlvmFunc::new(cx, name, &params, ret);
+        let mut func = LlvmFunc::new(cx, CString::new(name.as_ref()).unwrap(), &params, ret);
 
         match &self.body {
             Some(v) => Self::build_body(cx, &mut func, v),
@@ -138,6 +158,11 @@ impl Function {
                     ));
                 }
             }
+        }
+
+        // Set entry point.
+        if entry {
+            cx.set_entry(name.into_owned());
         }
 
         Ok(Some(ext))

@@ -23,7 +23,7 @@ impl Type {
         &self.name
     }
 
-    pub fn build<'a, 'b: 'a, U: IntoIterator<Item = &'a Use>>(
+    pub fn build<'a, 'b: 'a, 'c, U: IntoIterator<Item = &'c Use>>(
         &self,
         cx: &'a Codegen<'b>,
         uses: U,
@@ -49,9 +49,9 @@ impl Type {
         Ok(Some(ty))
     }
 
-    pub fn to_external<'a, 'b: 'a, U: IntoIterator<Item = &'a Use>>(
+    pub fn to_external<'a, 'b, U: IntoIterator<Item = &'a Use>>(
         &self,
-        cx: &'a Codegen<'b>,
+        cx: &Codegen<'b>,
         uses: U,
     ) -> Option<crate::pkg::Type> {
         use crate::pkg::Type;
@@ -172,8 +172,8 @@ impl Type {
         }
     }
 
-    fn resolve<'a, 'b: 'a, U: IntoIterator<Item = &'a Use>>(
-        cg: &'a Codegen<'b>,
+    fn resolve<'a, 'b, U: IntoIterator<Item = &'a Use>>(
+        cg: &Codegen<'b>,
         uses: U,
         name: &Path,
     ) -> Option<(String, &'b ResolvedType<'b>)> {

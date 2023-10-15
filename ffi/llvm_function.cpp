@@ -16,3 +16,8 @@ extern "C" void llvm_function_set_stdcall(Function *fn)
 {
     fn->setCallingConv(CallingConv::X86_StdCall);
 }
+
+extern "C" void llvm_function_set_noreturn(Function *fn)
+{
+    fn->addFnAttr(Attribute::NoReturn);
+}

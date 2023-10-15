@@ -11,10 +11,9 @@ use crate::ffi::{
     llvm_target_lookup,
 };
 use crate::pkg::{PackageName, PackageVersion, PrimitiveTarget, TargetOs};
-use std::error::Error;
 use std::ffi::{CStr, CString};
-use std::fmt::{Display, Formatter};
 use std::ptr::null;
+use thiserror::Error;
 
 mod block;
 mod builder;
@@ -35,6 +34,7 @@ pub struct Codegen<'a> {
     target: &'static PrimitiveTarget,
     executable: bool,
     namespace: &'a str,
+    entry: String,
     resolver: &'a TypeResolver<'a>,
 }
 
@@ -78,6 +78,7 @@ impl<'a> Codegen<'a> {
             target,
             executable,
             namespace: "",
+            entry: String::new(),
             resolver,
         }
     }
@@ -106,6 +107,14 @@ impl<'a> Codegen<'a> {
         self.namespace = v;
     }
 
+    pub fn entry(&self) -> &str {
+        &self.entry
+    }
+
+    pub fn set_entry(&mut self, v: String) {
+        self.entry = v;
+    }
+
     pub fn resolver(&self) -> &'a TypeResolver<'a> {
         self.resolver
     }
@@ -116,9 +125,14 @@ impl<'a> Codegen<'a> {
     }
 
     pub fn build<F: AsRef<std::path::Path>>(self, file: F) -> Result<(), BuildError> {
-        // Generate DllMain for DLL on Windows.
-        if self.target.os() == TargetOs::Win32 && !self.executable {
-            self.build_dll_main()?;
+        // Generate entry point.
+        match self.executable {
+            true => self.build_main()?,
+            false => match self.target.os() {
+                TargetOs::Darwin => {}
+                TargetOs::Linux => {}
+                TargetOs::Win32 => self.build_dll_main()?,
+            },
         }
 
         // TODO: Invoke LLVMVerifyModule.
@@ -127,10 +141,46 @@ impl<'a> Codegen<'a> {
         let file = CString::new(file).unwrap();
 
         if !unsafe { llvm_target_emit_object(self.machine, self.module, file.as_ptr(), &mut err) } {
-            Err(BuildError(err))
+            Err(BuildError::EmitObjectFailed(err))
         } else {
             Ok(())
         }
+    }
+
+    fn build_main(&self) -> Result<(), BuildError> {
+        if self.entry.is_empty() {
+            return Err(BuildError::NoEntryPoint);
+        }
+
+        // Get exit function.
+        let name = CStr::from_bytes_with_nul(b"exit\0").unwrap();
+        let exit = match LlvmFunc::get(self, name) {
+            Some(_) => todo!(),
+            None => {
+                let params = [LlvmType::I32(LlvmI32::new(self))];
+                let ret = LlvmType::Void(LlvmVoid::new(self));
+                let mut func = LlvmFunc::new(self, name, &params, ret);
+
+                func.set_noreturn();
+                func
+            }
+        };
+
+        // Create a function.
+        let name = CStr::from_bytes_with_nul(b"_main\0").unwrap();
+        let ret = LlvmType::Void(LlvmVoid::new(self));
+        let mut func = LlvmFunc::new(self, name, &[], ret);
+
+        // Build body.
+        let mut body = BasicBlock::new(self);
+        let mut b = Builder::new(self, &mut body);
+
+        b.call(exit.as_raw(), &[LlvmI32::new(self).get_const(0) as _]);
+        b.ret_void(); // TODO: Is it possible to remove this?
+
+        func.append(body);
+
+        Ok(())
     }
 
     fn build_dll_main(&self) -> Result<(), BuildError> {
@@ -170,13 +220,11 @@ impl<'a> Drop for Codegen<'a> {
 }
 
 /// Represents an error when [`Codegen::build()`] is failed.
-#[derive(Debug)]
-pub struct BuildError(String);
+#[derive(Debug, Error)]
+pub enum BuildError {
+    #[error("no entry point has been defined")]
+    NoEntryPoint,
 
-impl Error for BuildError {}
-
-impl Display for BuildError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
+    #[error("{0}")]
+    EmitObjectFailed(String),
 }
