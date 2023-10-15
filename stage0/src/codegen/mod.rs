@@ -4,20 +4,16 @@ pub use self::func::*;
 pub use self::resolver::*;
 pub use self::ty::*;
 
-use crate::ast::{Expression, Function, Path, TypeName, Use};
 use crate::ffi::{
     llvm_context_dispose, llvm_context_new, llvm_layout_dispose, llvm_layout_new,
     llvm_layout_pointer_size, llvm_module_dispose, llvm_module_new, llvm_module_set_layout,
     llvm_target_create_machine, llvm_target_dispose_machine, llvm_target_emit_object,
     llvm_target_lookup,
 };
-use crate::lexer::SyntaxError;
-use crate::pkg::{
-    ExportedType, PackageMeta, PackageName, PackageVersion, PrimitiveTarget, TargetOs,
-};
+use crate::pkg::{PackageName, PackageVersion, PrimitiveTarget, TargetOs};
 use std::error::Error;
 use std::ffi::{CStr, CString};
-use std::fmt::{Display, Formatter, Write};
+use std::fmt::{Display, Formatter};
 use std::ptr::null;
 
 mod block;
@@ -37,6 +33,7 @@ pub struct Codegen<'a> {
     pkg: &'a PackageName,
     version: &'a PackageVersion,
     target: &'static PrimitiveTarget,
+    executable: bool,
     namespace: &'a str,
     resolver: &'a TypeResolver<'a>,
 }
@@ -46,6 +43,7 @@ impl<'a> Codegen<'a> {
         pkg: &'a PackageName,
         version: &'a PackageVersion,
         target: &'static PrimitiveTarget,
+        executable: bool,
         resolver: &'a TypeResolver<'a>,
     ) -> Self {
         // Get LLVM target.
@@ -78,13 +76,38 @@ impl<'a> Codegen<'a> {
             pkg,
             version,
             target,
+            executable,
             namespace: "",
             resolver,
         }
     }
 
+    pub fn pkg(&self) -> &'a PackageName {
+        self.pkg
+    }
+
+    pub fn version(&self) -> &'a PackageVersion {
+        self.version
+    }
+
+    pub fn target(&self) -> &'static PrimitiveTarget {
+        self.target
+    }
+
+    pub fn executable(&self) -> bool {
+        self.executable
+    }
+
+    pub fn namespace(&self) -> &'a str {
+        self.namespace
+    }
+
     pub fn set_namespace(&mut self, v: &'a str) {
         self.namespace = v;
+    }
+
+    pub fn resolver(&self) -> &'a TypeResolver<'a> {
+        self.resolver
     }
 
     /// Returns the pointer size, in bytes.
@@ -92,176 +115,9 @@ impl<'a> Codegen<'a> {
         unsafe { llvm_layout_pointer_size(self.layout) }
     }
 
-    pub fn check_condition(&self, cond: &[Expression]) -> Result<bool, SyntaxError> {
-        // Get first expression.
-        let mut expr = cond.iter();
-        let lhs = match expr.next().unwrap() {
-            Expression::Value(v) => v,
-            e => return Err(SyntaxError::new(e.span(), "expect an identifier")),
-        };
-
-        // Get second expression.
-        let os = self.target.os();
-        let (equal, span) = match expr.next() {
-            Some(Expression::NotEqual(f, s)) => (false, f.span() + s.span()),
-            Some(Expression::Equal(f, s)) => (true, f.span() + s.span()),
-            Some(e) => return Err(SyntaxError::new(e.span(), "unsupported expression")),
-            None => {
-                return Ok(if lhs.value() == "unix" {
-                    os.is_unix()
-                } else {
-                    lhs.value() == os.name()
-                })
-            }
-        };
-
-        // Check if first expression is "os".
-        if lhs.value() != "os" {
-            return Err(SyntaxError::new(lhs.span().clone(), "unknown expression"));
-        }
-
-        // Get third argument.
-        let rhs = match expr.next() {
-            Some(Expression::String(v)) => v,
-            Some(t) => return Err(SyntaxError::new(t.span(), "expect a string literal")),
-            None => return Err(SyntaxError::new(span, "expect a string literal after this")),
-        };
-
-        // Compare.
-        let res = if equal {
-            rhs.value() == os.name()
-        } else {
-            rhs.value() != os.name()
-        };
-
-        if expr.next().is_some() {
-            todo!()
-        }
-
-        Ok(res)
-    }
-
-    pub fn mangle<'b, U>(&self, uses: U, ty: &str, mem: &Function) -> Result<String, SyntaxError>
-    where
-        U: IntoIterator<Item = &'b Use> + Clone,
-    {
-        // TODO: Use different algorithm for the executable.
-        let mut buf = String::new();
-        let pkg = self.pkg.as_str();
-
-        // Package name.
-        write!(buf, "_N{}{}", pkg.len(), pkg).unwrap();
-
-        // Package version.
-        if self.version.major() != 0 {
-            write!(buf, "V{}", self.version.major()).unwrap();
-        }
-
-        // Type name.
-        write!(buf, "T").unwrap();
-
-        for p in ty.split('.') {
-            write!(buf, "{}{}", p.len(), p).unwrap();
-        }
-
-        // Function name.
-        let name = mem.name().value();
-
-        write!(buf, "F{}{}", name.len(), name).unwrap();
-        write!(buf, "0").unwrap(); // C calling convention.
-
-        // Return type.
-        match mem.ret() {
-            Some(v) => {
-                for _ in v.prefixes() {
-                    buf.push('P');
-                }
-
-                match v.name() {
-                    TypeName::Unit(_, _) => buf.push('U'),
-                    TypeName::Never(_) => buf.push('N'),
-                    TypeName::Ident(p) => match self.resolve(uses.clone(), p) {
-                        Some((n, t)) => match t {
-                            ResolvedType::Internal(_) => Self::mangle_self(&mut buf, &n),
-                            ResolvedType::External((p, t)) => Self::mangle_ext(&mut buf, p, t),
-                        },
-                        None => return Err(SyntaxError::new(p.span(), "undefined type")),
-                    },
-                }
-            }
-            None => buf.push('U'),
-        }
-
-        // Parameters.
-        for p in mem.params().iter().map(|p| p.ty()) {
-            for _ in p.prefixes() {
-                buf.push('P');
-            }
-
-            match p.name() {
-                TypeName::Unit(_, _) => buf.push('U'),
-                TypeName::Never(_) => buf.push('N'),
-                TypeName::Ident(p) => match self.resolve(uses.clone(), p) {
-                    Some((n, t)) => match t {
-                        ResolvedType::Internal(_) => Self::mangle_self(&mut buf, &n),
-                        ResolvedType::External((p, t)) => Self::mangle_ext(&mut buf, p, t),
-                    },
-                    None => return Err(SyntaxError::new(p.span(), "undefined type")),
-                },
-            }
-        }
-
-        Ok(buf)
-    }
-
-    pub fn resolve<'b, U>(&self, uses: U, name: &Path) -> Option<(String, &ResolvedType<'a>)>
-    where
-        U: IntoIterator<Item = &'b Use>,
-    {
-        // Resolve full name.
-        let name = match name.as_local() {
-            Some(name) => {
-                // Search from use declarations first to allow overrides.
-                let mut found = None;
-
-                for u in uses {
-                    match u.rename() {
-                        Some(v) => {
-                            if v == name {
-                                found = Some(u);
-                            }
-                        }
-                        None => {
-                            if u.name().last() == name {
-                                found = Some(u);
-                            }
-                        }
-                    }
-                }
-
-                match found {
-                    Some(v) => v.name().to_string(),
-                    None => {
-                        if self.namespace.is_empty() {
-                            format!("self.{}", name)
-                        } else {
-                            format!("self.{}.{}", self.namespace, name)
-                        }
-                    }
-                }
-            }
-            None => name.to_string(),
-        };
-
-        // Resolve type.
-        let ty = self.resolver.resolve(&name)?;
-
-        Some((name, ty))
-    }
-
-    pub fn build<F: AsRef<std::path::Path>>(self, file: F, exe: bool) -> Result<(), BuildError> {
+    pub fn build<F: AsRef<std::path::Path>>(self, file: F) -> Result<(), BuildError> {
         // Generate DllMain for DLL on Windows.
-        if self.target.os() == TargetOs::Win32 && !exe {
+        if self.target.os() == TargetOs::Win32 && !self.executable {
             self.build_dll_main()?;
         }
 
@@ -301,31 +157,6 @@ impl<'a> Codegen<'a> {
         func.append(body);
 
         Ok(())
-    }
-
-    fn mangle_self(buf: &mut String, path: &str) {
-        buf.push('S');
-
-        for p in path.strip_prefix("self.").unwrap().split('.') {
-            write!(buf, "{}{}", p.len(), p).unwrap();
-        }
-    }
-
-    fn mangle_ext(buf: &mut String, pkg: &PackageMeta, ty: &ExportedType) {
-        let name = pkg.name().as_str();
-        let ver = pkg.version().major();
-
-        write!(buf, "E{}{}", name.len(), name).unwrap();
-
-        if ver != 0 {
-            write!(buf, "V{ver}T",).unwrap();
-        } else {
-            buf.push('T');
-        }
-
-        for p in ty.name().split('.') {
-            write!(buf, "{}{}", p.len(), p).unwrap();
-        }
     }
 }
 

@@ -1,54 +1,54 @@
-use super::{PackageName, PackageVersion};
 use std::collections::HashSet;
-use std::fmt::Write;
 use std::hash::{Hash, Hasher};
+use std::io::Write;
 
 /// A type that was exported from a package.
-pub struct ExportedType {
-    name: String,
-    funcs: HashSet<ExportedFunc>,
+pub enum TypeDeclaration {
+    Basic(BasicType),
 }
 
-impl ExportedType {
+impl TypeDeclaration {
     const ENTRY_END: u8 = 0;
     const ENTRY_NAME: u8 = 1;
-    const ENTRY_FUNC: u8 = 2;
+    const ENTRY_STRUCT: u8 = 2;
+    const ENTRY_CLASS: u8 = 3;
+    const ENTRY_FUNC: u8 = 4;
 
-    pub fn new(name: String) -> Self {
-        Self {
-            name,
-            funcs: HashSet::new(),
+    /// Returns a fully qualified type name (no package name is prefixed).
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Basic(v) => v.name(),
         }
     }
 
-    pub fn name(&self) -> &str {
-        self.name.as_ref()
-    }
-
-    pub fn funcs(&self) -> impl Iterator<Item = &ExportedFunc> {
-        self.funcs.iter()
-    }
-
-    pub fn add_func(&mut self, f: ExportedFunc) {
-        assert!(self.funcs.insert(f));
-    }
-
-    pub(super) fn serialize<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
-        // Type name.
-        let len: u16 = self.name.len().try_into().unwrap();
+    pub(super) fn serialize<W: Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+        // Name.
+        let name = self.name();
+        let len: u16 = name.len().try_into().unwrap();
 
         w.write_all(&[Self::ENTRY_NAME])?;
         w.write_all(&len.to_be_bytes())?;
-        w.write_all(self.name.as_bytes())?;
+        w.write_all(name.as_bytes())?;
 
-        // Functions.
-        let len: u32 = self.funcs.len().try_into().unwrap();
+        // Type.
+        match self {
+            Self::Basic(ty) => {
+                w.write_all(&[if ty.is_class {
+                    Self::ENTRY_CLASS
+                } else {
+                    Self::ENTRY_STRUCT
+                }])?;
 
-        w.write_all(&[Self::ENTRY_FUNC])?;
-        w.write_all(&len.to_be_bytes())?;
+                // Functions.
+                let len: u32 = ty.funcs.len().try_into().unwrap();
 
-        for f in &self.funcs {
-            f.serialize(w)?;
+                w.write_all(&[Self::ENTRY_FUNC])?;
+                w.write_all(&len.to_be_bytes())?;
+
+                for f in &ty.funcs {
+                    f.serialize(w)?;
+                }
+            }
         }
 
         // End.
@@ -56,28 +56,70 @@ impl ExportedType {
     }
 }
 
-impl PartialEq for ExportedType {
+impl PartialEq for TypeDeclaration {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
+        self.name() == other.name()
     }
 }
 
-impl Eq for ExportedType {}
+impl Eq for TypeDeclaration {}
 
-impl Hash for ExportedType {
+impl Hash for TypeDeclaration {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
+        self.name().hash(state);
     }
 }
 
-/// A function that was exported from a package.
-pub struct ExportedFunc {
+/// A struct or class.
+///
+/// Struct in Nitro is a value type the same as .NET and its memory layout is always the same as C.
+/// All fields must be a struct and it will always public. Struct type cannot be a generic type and
+/// does not supports inheritance.
+///
+/// Class in Nitro is a reference type, which mean any variable of a class type will be a pointer to
+/// the heap allocated. All fields in the class will always private.
+pub struct BasicType {
+    is_class: bool,
+    attrs: Attributes,
+    name: String,
+    funcs: HashSet<Function>,
+}
+
+impl BasicType {
+    pub fn new(is_class: bool, attrs: Attributes, name: String, funcs: HashSet<Function>) -> Self {
+        Self {
+            is_class,
+            attrs,
+            name,
+            funcs,
+        }
+    }
+
+    pub fn is_class(&self) -> bool {
+        self.is_class
+    }
+
+    pub fn attrs(&self) -> &Attributes {
+        &self.attrs
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn funcs(&self) -> impl Iterator<Item = &Function> {
+        self.funcs.iter()
+    }
+}
+
+/// A function.
+pub struct Function {
     name: String,
     params: Vec<FunctionParam>,
     ret: Type,
 }
 
-impl ExportedFunc {
+impl Function {
     const ENTRY_END: u8 = 0;
     const ENTRY_NAME: u8 = 1;
     const ENTRY_RET: u8 = 2;
@@ -87,22 +129,39 @@ impl ExportedFunc {
         Self { name, params, ret }
     }
 
-    pub fn mangle(&self, pkg: &PackageName, ver: &PackageVersion, ty: &ExportedType) -> String {
-        // Package name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn params(&self) -> &[FunctionParam] {
+        &self.params
+    }
+
+    pub fn ret(&self) -> &Type {
+        &self.ret
+    }
+
+    pub fn mangle(&self, lib: Option<(&str, u16)>, ty: &str) -> String {
+        use std::fmt::Write;
+
+        // Check if executable.
         let mut buf = String::new();
-        let pkg = pkg.as_str();
 
-        write!(buf, "_N{}{}", pkg.len(), pkg).unwrap();
+        match lib {
+            Some((pkg, ver)) => {
+                write!(buf, "_NEF{}{}", pkg.len(), pkg).unwrap();
 
-        // Package version.
-        if ver.major() != 0 {
-            write!(buf, "V{}", ver.major()).unwrap();
+                if ver != 0 {
+                    write!(buf, "V{ver}").unwrap();
+                }
+
+                write!(buf, "T").unwrap();
+            }
+            None => write!(buf, "_NIF").unwrap(),
         }
 
         // Type name.
-        write!(buf, "T").unwrap();
-
-        for p in ty.name.split('.') {
+        for p in ty.split('.') {
             write!(buf, "{}{}", p.len(), p).unwrap();
         }
 
@@ -114,14 +173,14 @@ impl ExportedFunc {
         self.ret.mangle(&mut buf);
 
         // Parameters.
-        for p in self.params.iter().map(|p| &p.ty) {
-            p.mangle(&mut buf);
+        for p in &self.params {
+            p.ty.mangle(&mut buf);
         }
 
         buf
     }
 
-    fn serialize<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+    fn serialize<W: Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
         // Name.
         let len: u16 = self.name.len().try_into().unwrap();
 
@@ -136,8 +195,7 @@ impl ExportedFunc {
         // Params.
         let len: u8 = self.params.len().try_into().unwrap();
 
-        w.write_all(&[Self::ENTRY_PARAMS])?;
-        w.write_all(&[len])?;
+        w.write_all(&[Self::ENTRY_PARAMS, len.try_into().unwrap()])?;
 
         for p in &self.params {
             p.serialize(w)?;
@@ -148,21 +206,21 @@ impl ExportedFunc {
     }
 }
 
-impl PartialEq for ExportedFunc {
+impl PartialEq for Function {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
 
-impl Eq for ExportedFunc {}
+impl Eq for Function {}
 
-impl Hash for ExportedFunc {
+impl Hash for Function {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
     }
 }
 
-/// Parameter of a function.
+/// A function parameter.
 pub struct FunctionParam {
     name: String,
     ty: Type,
@@ -177,12 +235,19 @@ impl FunctionParam {
         Self { name, ty }
     }
 
-    fn serialize<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn ty(&self) -> &Type {
+        &self.ty
+    }
+
+    fn serialize<W: Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
         // Name.
         let len: u8 = self.name.len().try_into().unwrap();
 
-        w.write_all(&[Self::ENTRY_NAME])?;
-        w.write_all(&[len])?;
+        w.write_all(&[Self::ENTRY_NAME, len])?;
         w.write_all(self.name.as_bytes())?;
 
         // Type.
@@ -194,41 +259,60 @@ impl FunctionParam {
     }
 }
 
-/// Type of something.
+/// Type of something (e.g. function parameter).
 pub enum Type {
-    Unit(usize),
+    Unit {
+        ptr: usize,
+    },
     Never,
-    Local(usize, String),
-    External(usize, String, u16, String),
+    Struct {
+        ptr: usize,
+        pkg: Option<(String, u16)>,
+        name: String,
+    },
+    Class {
+        ptr: usize,
+        pkg: Option<(String, u16)>,
+        name: String,
+    },
 }
 
 impl Type {
     fn mangle(&self, buf: &mut String) {
         match self {
-            Self::Unit(p) => {
-                for _ in 0..*p {
-                    buf.push('P');
-                }
-
-                buf.push('U');
-            }
-            Self::Never => buf.push('N'),
-            Self::Local(p, n) => {
-                for _ in 0..*p {
-                    buf.push('P');
-                }
-
-                buf.push('S');
-
-                for p in n.split('.') {
-                    write!(buf, "{}{}", p.len(), p).unwrap();
-                }
-            }
-            Self::External(ptr, pkg, ver, path) => {
+            Self::Unit { ptr } => {
                 for _ in 0..*ptr {
                     buf.push('P');
                 }
+                buf.push('U');
+            }
+            Self::Never => buf.push('N'),
+            Self::Struct { ptr, pkg, name } => {
+                Self::mangle_basic(buf, false, *ptr, pkg.as_ref(), name)
+            }
+            Self::Class { ptr, pkg, name } => {
+                Self::mangle_basic(buf, true, *ptr, pkg.as_ref(), name)
+            }
+        }
+    }
 
+    fn mangle_basic(
+        buf: &mut String,
+        class: bool,
+        ptr: usize,
+        pkg: Option<&(String, u16)>,
+        name: &str,
+    ) {
+        use std::fmt::Write;
+
+        for _ in 0..ptr {
+            buf.push('P');
+        }
+
+        buf.push(if class { 'C' } else { 'S' });
+
+        match pkg {
+            Some((pkg, ver)) => {
                 write!(buf, "E{}{}", pkg.len(), pkg).unwrap();
 
                 if *ver != 0 {
@@ -236,37 +320,88 @@ impl Type {
                 } else {
                     buf.push('T');
                 }
-
-                for p in path.split('.') {
-                    write!(buf, "{}{}", p.len(), p).unwrap();
-                }
             }
+            None => buf.push('S'),
+        }
+
+        for p in name.split('.') {
+            write!(buf, "{}{}", p.len(), p).unwrap();
         }
     }
 
-    fn serialize<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
-        match self {
-            Self::Unit(p) => w.write_all(&[0, (*p).try_into().unwrap()])?,
-            Self::Never => w.write_all(&[3])?,
-            Self::Local(p, n) => {
-                let l: u16 = n.len().try_into().unwrap();
-
-                w.write_all(&[1, (*p).try_into().unwrap()])?;
-                w.write_all(&l.to_be_bytes())?;
-                w.write_all(n.as_bytes())?;
+    fn serialize<W: Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+        // Check if struct or class.
+        let (ptr, pkg, name) = match self {
+            Self::Unit { ptr } => return w.write_all(&[0, (*ptr).try_into().unwrap()]),
+            Self::Never => return w.write_all(&[3]),
+            Self::Struct { ptr, pkg, name } => {
+                w.write_all(&[1])?;
+                (*ptr, pkg, name)
             }
-            Self::External(ptr, pkg, ver, path) => {
-                let l: u16 = path.len().try_into().unwrap();
+            Self::Class { ptr, pkg, name } => {
+                w.write_all(&[2])?;
+                (*ptr, pkg, name)
+            }
+        };
 
-                w.write_all(&[2, (*ptr).try_into().unwrap()])?;
+        // Write prefixes.
+        w.write_all(&[ptr.try_into().unwrap()])?;
+
+        // Write package.
+        match pkg {
+            Some((pkg, ver)) => {
                 w.write_all(&[pkg.len().try_into().unwrap()])?;
                 w.write_all(pkg.as_bytes())?;
                 w.write_all(&ver.to_be_bytes())?;
-                w.write_all(&l.to_be_bytes())?;
-                w.write_all(path.as_bytes())?;
             }
+            None => w.write_all(&[0])?,
         }
 
-        Ok(())
+        // Write name.
+        let len: u16 = name.len().try_into().unwrap();
+
+        w.write_all(&len.to_be_bytes())?;
+        w.write_all(name.as_bytes())
     }
+}
+
+/// A collection of attributes.
+pub struct Attributes {
+    public: Option<Public>,
+    ext: Option<Extern>,
+    repr: Option<Representation>,
+}
+
+impl Attributes {
+    pub fn new(public: Option<Public>, ext: Option<Extern>, repr: Option<Representation>) -> Self {
+        Self { public, ext, repr }
+    }
+
+    pub fn public(&self) -> Option<Public> {
+        self.public
+    }
+
+    pub fn repr(&self) -> Option<Representation> {
+        self.repr
+    }
+}
+
+/// Argument of `@pub`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Public {
+    External,
+}
+
+/// Argument of `@ext`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Extern {
+    C,
+}
+
+/// Argument of `@repr`
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Representation {
+    I32,
+    U8,
+    Un,
 }

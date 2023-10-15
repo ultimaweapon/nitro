@@ -4,11 +4,10 @@ use crate::ast::{ParseError, SourceFile};
 use crate::codegen::{BuildError, Codegen, TypeResolver};
 use crate::lexer::SyntaxError;
 use crate::pkg::{
-    Binary, DependencyResolver, ExportedFunc, ExportedType, FunctionParam, Library, LibraryBinary,
-    Package, PackageMeta, PackageName, PackageVersion, PrimitiveTarget, Target, TargetArch,
-    TargetOs, TargetResolveError, TargetResolver, Type,
+    Binary, DependencyResolver, Library, LibraryBinary, Package, PackageMeta, PackageName,
+    PackageVersion, PrimitiveTarget, Target, TargetArch, TargetOs, TargetResolveError,
+    TargetResolver, TypeDeclaration,
 };
-use crate::ty::Public;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::error::Error;
@@ -340,7 +339,7 @@ impl<'a> Project<'a> {
         };
 
         // Get fully qualified type name.
-        if source.ty().is_some() {
+        if source.has_type() {
             let mut fqtn = String::new();
 
             for c in path.strip_prefix(root).unwrap().components() {
@@ -376,7 +375,7 @@ impl<'a> Project<'a> {
         exe: bool,
         target: &Target,
         sources: S,
-        resolver: &'b TypeResolver<'_>,
+        resolver: &TypeResolver<'b>,
     ) -> Result<BuildResult, ProjectBuildError>
     where
         R: AsRef<Path>,
@@ -420,102 +419,39 @@ impl<'a> Project<'a> {
         target: &'static PrimitiveTarget,
         sources: S,
         output: O,
-        resolver: &'b TypeResolver<'_>,
-    ) -> Result<HashSet<ExportedType>, ProjectBuildError>
+        resolver: &TypeResolver<'b>,
+    ) -> Result<HashSet<TypeDeclaration>, ProjectBuildError>
     where
         S: IntoIterator<Item = (&'b String, &'b SourceFile)>,
         O: AsRef<Path>,
     {
         // Setup codegen context.
         let pkg = self.meta.package();
-        let mut cx = Codegen::new(pkg.name(), pkg.version(), target, resolver);
+        let mut cx = Codegen::new(pkg.name(), pkg.version(), target, exe, resolver);
 
         // Compile source files.
         let mut types = HashSet::new();
 
         for (fqtn, src) in sources {
-            // Check type condition.
-            let ty = src.ty().unwrap();
-            let attrs = ty.attrs();
-
-            if let Some((_, cond)) = attrs.condition() {
-                match cx.check_condition(cond) {
-                    Ok(v) => {
-                        if !v {
-                            continue;
-                        }
-                    }
-                    Err(e) => {
-                        return Err(ProjectBuildError::InvalidSyntax(src.path().to_owned(), e));
-                    }
-                }
-            }
-
-            // Check if the type is public.
-            let mut exp = ty
-                .attrs()
-                .public()
-                .filter(|(_, p)| *p == Public::External)
-                .map(|_| ExportedType::new(fqtn.clone()));
-
-            // Compile implementations.
             cx.set_namespace(match fqtn.rfind('.') {
                 Some(i) => &fqtn[..i],
                 None => "",
             });
 
-            for im in src.impls() {
-                for func in im.functions() {
-                    // Compile the function.
-                    match func.build(&cx, &fqtn, src.uses()) {
-                        Ok(v) => {
-                            if v.is_none() {
-                                continue;
-                            }
-                        }
-                        Err(e) => {
-                            return Err(ProjectBuildError::InvalidSyntax(src.path().to_owned(), e));
-                        }
-                    }
-
-                    // Export the function.
-                    let public = func
-                        .attrs()
-                        .public()
-                        .filter(|(_, p)| *p == Public::External);
-
-                    if let Some((exp, _)) = exp.as_mut().zip(public) {
-                        let name = func.name().value().to_owned();
-                        let params = func
-                            .params()
-                            .iter()
-                            .map(|p| {
-                                FunctionParam::new(
-                                    p.name().value().to_owned(),
-                                    p.ty().to_export(&cx, &[]),
-                                )
-                            })
-                            .collect();
-                        let ret = match func.ret() {
-                            Some(v) => v.to_export(&cx, &[]),
-                            None => Type::Unit(0),
-                        };
-
-                        exp.add_func(ExportedFunc::new(name, params, ret));
+            match src.build(&cx) {
+                Ok(v) => {
+                    if let Some(v) = v {
+                        assert!(types.insert(v));
                     }
                 }
-            }
-
-            // Export the type.
-            if let Some(v) = exp {
-                assert!(types.insert(v));
+                Err(e) => return Err(ProjectBuildError::InvalidSyntax(src.path().to_owned(), e)),
             }
         }
 
         // Build the object file.
         let obj = output.as_ref();
 
-        if let Err(e) = cx.build(obj, exe) {
+        if let Err(e) = cx.build(obj) {
             return Err(ProjectBuildError::BuildFailed(obj.to_owned(), e));
         }
 
@@ -551,18 +487,24 @@ impl<'a> Project<'a> {
     ) -> Result<(), std::io::Error>
     where
         F: AsRef<Path>,
-        T: IntoIterator<Item = &'b ExportedType>,
+        T: IntoIterator<Item = &'b TypeDeclaration>,
     {
         // Create the file.
         let mut file = File::create(file)?;
 
         file.write_all(b"EXPORTS\n")?;
 
-        // Dumpt public types.
+        // Dump public types.
         for ty in types {
+            let ty = match ty {
+                TypeDeclaration::Basic(v) => v,
+            };
+
             for func in ty.funcs() {
+                let name = func.mangle(Some((pkg.as_str(), ver.major())), ty.name());
+
                 file.write_all(b"    ")?;
-                file.write_all(func.mangle(pkg, ver, ty).as_bytes())?;
+                file.write_all(name.as_bytes())?;
                 file.write_all(b"\n")?;
             }
         }
@@ -586,7 +528,7 @@ struct BuildResult {
     target: &'static PrimitiveTarget,
     workspace: PathBuf,
     object: PathBuf,
-    exports: HashSet<ExportedType>,
+    exports: HashSet<TypeDeclaration>,
 }
 
 /// Represents an error when a [`Project`] is failed to open.

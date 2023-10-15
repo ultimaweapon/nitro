@@ -1,3 +1,4 @@
+use super::bt::BasicType;
 use super::{Path, SourceFile, TypeDefinition, Use};
 use crate::codegen::{
     Codegen, LlvmI32, LlvmPtr, LlvmType, LlvmU64, LlvmU8, LlvmVoid, ResolvedType,
@@ -5,10 +6,10 @@ use crate::codegen::{
 use crate::lexer::{
     Asterisk, CloseParenthesis, ExclamationMark, OpenParenthesis, Span, SyntaxError,
 };
-use crate::ty::{BasicType, Representation};
+use crate::pkg::{Representation, TypeDeclaration};
 
 /// A type of something (e.g. variable).
-pub struct Type {
+pub(super) struct Type {
     prefixes: Vec<Asterisk>,
     name: TypeName,
 }
@@ -16,10 +17,6 @@ pub struct Type {
 impl Type {
     pub fn new(prefixes: Vec<Asterisk>, name: TypeName) -> Self {
         Self { prefixes, name }
-    }
-
-    pub fn prefixes(&self) -> &[Asterisk] {
-        self.prefixes.as_ref()
     }
 
     pub fn name(&self) -> &TypeName {
@@ -35,47 +32,72 @@ impl Type {
         let mut ty = match &self.name {
             TypeName::Unit(_, _) => LlvmType::Void(LlvmVoid::new(cx)),
             TypeName::Never(_) => return Ok(None),
-            TypeName::Ident(n) => match cx.resolve(uses, n) {
+            TypeName::Ident(n) => match Self::resolve(cx, uses, n) {
                 Some((n, t)) => match t {
                     ResolvedType::Internal(v) => Self::build_internal_type(cx, &n, v),
-                    ResolvedType::External(_) => todo!(),
+                    ResolvedType::External((_, t)) => Self::build_external_type(cx, &n, t),
                 },
                 None => return Err(SyntaxError::new(n.span(), "type is undefined")),
             },
         };
 
         // Resolve pointers.
-        for p in self.prefixes.iter().rev() {
+        for _ in self.prefixes.iter().rev() {
             ty = LlvmType::Ptr(LlvmPtr::new(cx, ty));
         }
 
         Ok(Some(ty))
     }
 
-    pub fn to_export<'a, 'b: 'a>(&self, cx: &'a Codegen<'b>, uses: &[Use]) -> crate::pkg::Type {
+    pub fn to_external<'a, 'b: 'a, U: IntoIterator<Item = &'a Use>>(
+        &self,
+        cx: &'a Codegen<'b>,
+        uses: U,
+    ) -> Option<crate::pkg::Type> {
         use crate::pkg::Type;
 
         let ptr = self.prefixes.len();
-
-        match &self.name {
-            TypeName::Unit(_, _) => Type::Unit(ptr),
+        let ty = match &self.name {
+            TypeName::Unit(_, _) => Type::Unit { ptr },
             TypeName::Never(_) => Type::Never,
             TypeName::Ident(n) => {
-                let (n, t) = cx.resolve(uses, n).unwrap();
+                let (n, t) = Self::resolve(cx, uses, n)?;
 
                 match t {
-                    ResolvedType::Internal(f) => {
-                        Type::Local(ptr, n.strip_prefix("self.").unwrap().to_owned())
+                    ResolvedType::Internal(s) => {
+                        // Strip "self.".
+                        let name = n[5..].to_owned();
+                        let pkg = None;
+
+                        match s.ty.as_ref().unwrap() {
+                            TypeDefinition::Basic(t) => {
+                                if t.is_ref() {
+                                    Type::Class { ptr, pkg, name }
+                                } else {
+                                    Type::Struct { ptr, pkg, name }
+                                }
+                            }
+                        }
                     }
-                    ResolvedType::External((p, t)) => Type::External(
-                        ptr,
-                        p.name().to_string(),
-                        p.version().major(),
-                        t.name().to_owned(),
-                    ),
+                    ResolvedType::External((p, t)) => {
+                        let pkg = Some((p.name().as_str().to_owned(), p.version().major()));
+                        let name = t.name().to_owned();
+
+                        match t {
+                            TypeDeclaration::Basic(t) => {
+                                if t.is_class() {
+                                    Type::Class { ptr, pkg, name }
+                                } else {
+                                    Type::Struct { ptr, pkg, name }
+                                }
+                            }
+                        }
+                    }
                 }
             }
-        }
+        };
+
+        Some(ty)
     }
 
     fn build_internal_type<'a, 'b: 'a>(
@@ -88,35 +110,117 @@ impl Type {
                 if v.is_ref() {
                     todo!()
                 } else {
-                    Self::build_struct(cx, name, v)
+                    Self::build_internal_struct(cx, name, v)
                 }
             }
         }
     }
 
-    fn build_struct<'a, 'b: 'a>(
+    fn build_external_type<'a, 'b: 'a>(
+        cg: &'a Codegen<'b>,
+        name: &str,
+        ty: &TypeDeclaration,
+    ) -> LlvmType<'a, 'b> {
+        match ty {
+            TypeDeclaration::Basic(bt) => {
+                if bt.is_class() {
+                    todo!()
+                } else {
+                    Self::build_external_struct(cg, name, bt)
+                }
+            }
+        }
+    }
+
+    fn build_internal_struct<'a, 'b: 'a>(
         cx: &'a Codegen<'b>,
         name: &str,
-        ty: &dyn BasicType,
+        ty: &BasicType,
     ) -> LlvmType<'a, 'b> {
         assert!(!ty.is_ref());
 
         match ty.attrs().repr() {
-            Some(v) => match v {
-                Representation::I32 => LlvmType::I32(LlvmI32::new(cx)),
-                Representation::U8 => LlvmType::U8(LlvmU8::new(cx)),
-                Representation::Un => match cx.pointer_size() {
-                    8 => LlvmType::U64(LlvmU64::new(cx)),
-                    _ => todo!(),
-                },
-            },
+            Some(v) => Self::build_primitive_struct(cx, v.1),
             None => todo!(),
         }
+    }
+
+    fn build_external_struct<'a, 'b: 'a>(
+        cg: &'a Codegen<'b>,
+        name: &str,
+        ty: &crate::pkg::BasicType,
+    ) -> LlvmType<'a, 'b> {
+        assert!(!ty.is_class());
+
+        match ty.attrs().repr() {
+            Some(v) => Self::build_primitive_struct(cg, v),
+            None => todo!(),
+        }
+    }
+
+    fn build_primitive_struct<'a, 'b: 'a>(
+        cg: &'a Codegen<'b>,
+        repr: Representation,
+    ) -> LlvmType<'a, 'b> {
+        match repr {
+            Representation::I32 => LlvmType::I32(LlvmI32::new(cg)),
+            Representation::U8 => LlvmType::U8(LlvmU8::new(cg)),
+            Representation::Un => match cg.pointer_size() {
+                8 => LlvmType::U64(LlvmU64::new(cg)),
+                _ => todo!(),
+            },
+        }
+    }
+
+    fn resolve<'a, 'b: 'a, U: IntoIterator<Item = &'a Use>>(
+        cg: &'a Codegen<'b>,
+        uses: U,
+        name: &Path,
+    ) -> Option<(String, &'b ResolvedType<'b>)> {
+        // Resolve full name.
+        let name = match name.as_local() {
+            Some(name) => {
+                // Search from use declarations first to allow overrides.
+                let mut found = None;
+
+                for u in uses {
+                    match u.rename() {
+                        Some(v) => {
+                            if v == name {
+                                found = Some(u);
+                            }
+                        }
+                        None => {
+                            if u.name().last() == name {
+                                found = Some(u);
+                            }
+                        }
+                    }
+                }
+
+                match found {
+                    Some(v) => v.name().to_string(),
+                    None => {
+                        if cg.namespace().is_empty() {
+                            format!("self.{}", name)
+                        } else {
+                            format!("self.{}.{}", cg.namespace(), name)
+                        }
+                    }
+                }
+            }
+            None => name.to_string(),
+        };
+
+        // Resolve type.
+        let ty = cg.resolver().resolve(&name)?;
+
+        Some((name, ty))
     }
 }
 
 /// Name of a [`Type`].
-pub enum TypeName {
+pub(super) enum TypeName {
     Unit(OpenParenthesis, CloseParenthesis),
     Never(ExclamationMark),
     Ident(Path),

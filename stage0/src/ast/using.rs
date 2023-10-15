@@ -2,7 +2,7 @@ use super::{Attributes, Path};
 use crate::lexer::{Identifier, Lexer, SyntaxError, Token, UseKeyword};
 
 /// A `use` declaration.
-pub struct Use {
+pub(super) struct Use {
     attrs: Attributes,
     def: UseKeyword,
     name: Path,

@@ -2,7 +2,7 @@ use crate::lexer::{Identifier, Span, Token};
 use std::fmt::{Display, Formatter};
 
 /// A path of identifier (e.g. `foo.bar.Foo`).
-pub struct Path {
+pub(super) struct Path {
     components: Vec<Token>,
 }
 

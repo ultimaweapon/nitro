@@ -1,10 +1,11 @@
-use super::Expression;
+use super::expr::Expression;
+use crate::codegen::Codegen;
 use crate::lexer::{AttributeName, Lexer, SyntaxError, Token};
-use crate::ty::{Public, Representation};
+use crate::pkg::{Extern, Public, Representation};
 
-/// A collection of attributes.
+/// A collection of attributes in the source file.
 #[derive(Default)]
-pub struct Attributes {
+pub(super) struct Attributes {
     public: Option<(AttributeName, Public)>,
     condition: Option<(AttributeName, Vec<Expression>)>,
     ext: Option<(AttributeName, Extern)>,
@@ -44,16 +45,75 @@ impl Attributes {
         self.public.as_ref()
     }
 
-    pub fn condition(&self) -> Option<&(AttributeName, Vec<Expression>)> {
-        self.condition.as_ref()
-    }
-
     pub fn ext(&self) -> Option<&(AttributeName, Extern)> {
         self.ext.as_ref()
     }
 
     pub fn repr(&self) -> Option<&(AttributeName, Representation)> {
         self.repr.as_ref()
+    }
+
+    pub fn run_condition(&self, cg: &Codegen) -> Result<bool, SyntaxError> {
+        // Always return true if no condition.
+        let cond = match &self.condition {
+            Some(v) => &v.1,
+            None => return Ok(true),
+        };
+
+        // Get first expression.
+        let mut expr = cond.iter();
+        let lhs = match expr.next().unwrap() {
+            Expression::Value(v) => v,
+            e => return Err(SyntaxError::new(e.span(), "expect an identifier")),
+        };
+
+        // Get second expression.
+        let os = cg.target().os();
+        let (equal, span) = match expr.next() {
+            Some(Expression::NotEqual(f, s)) => (false, f.span() + s.span()),
+            Some(Expression::Equal(f, s)) => (true, f.span() + s.span()),
+            Some(e) => return Err(SyntaxError::new(e.span(), "unsupported expression")),
+            None => {
+                return Ok(if lhs.value() == "unix" {
+                    os.is_unix()
+                } else {
+                    lhs.value() == os.name()
+                })
+            }
+        };
+
+        // Check if first expression is "os".
+        if lhs.value() != "os" {
+            return Err(SyntaxError::new(lhs.span().clone(), "unknown expression"));
+        }
+
+        // Get third argument.
+        let rhs = match expr.next() {
+            Some(Expression::String(v)) => v,
+            Some(t) => return Err(SyntaxError::new(t.span(), "expect a string literal")),
+            None => return Err(SyntaxError::new(span, "expect a string literal after this")),
+        };
+
+        // Compare.
+        let res = if equal {
+            rhs.value() == os.name()
+        } else {
+            rhs.value() != os.name()
+        };
+
+        if expr.next().is_some() {
+            todo!()
+        }
+
+        Ok(res)
+    }
+
+    pub fn to_external(&self) -> crate::pkg::Attributes {
+        crate::pkg::Attributes::new(
+            self.public.as_ref().map(|v| v.1),
+            self.ext.as_ref().map(|v| v.1),
+            self.repr.as_ref().map(|v| v.1),
+        )
     }
 
     fn parse_single(&mut self, lex: &mut Lexer, name: AttributeName) -> Result<(), SyntaxError> {
@@ -174,19 +234,4 @@ impl Attributes {
 
         Ok(())
     }
-}
-
-impl crate::ty::Attributes for Attributes {
-    fn public(&self) -> Option<Public> {
-        self.public.as_ref().map(|v| v.1)
-    }
-
-    fn repr(&self) -> Option<Representation> {
-        self.repr.as_ref().map(|v| v.1)
-    }
-}
-
-/// Argument of `@ext`.
-pub enum Extern {
-    C,
 }

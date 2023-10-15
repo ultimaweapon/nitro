@@ -168,12 +168,6 @@ Set parameter `Type` to `debug` if you want to hack on Nitro (e.g. `.\build-cli.
 .\build-dist.ps1
 ```
 
-## Financial support
-
-If you like Nitro please consider [support me](https://github.com/sponsors/ultimaweapon). I'm
-currently unemployed and looking for a job. If the supported amount is large enough I can stop
-applying for a job and continue working on this as a full-time.
-
 ## License
 
 BSD-2-Clause Plus Patent License

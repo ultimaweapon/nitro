@@ -1,4 +1,4 @@
-use super::ExportedType;
+use super::TypeDeclaration;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::Write;
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 /// what wrong with `foo` when Carlos report something is not working.
 pub struct Library {
     bin: LibraryBinary,
-    types: HashSet<ExportedType>,
+    types: HashSet<TypeDeclaration>,
 }
 
 impl Library {
@@ -27,15 +27,15 @@ impl Library {
     const ENTRY_TYPES: u8 = 1;
     const ENTRY_SYSTEM: u8 = 2;
 
-    pub fn new(bin: LibraryBinary, types: HashSet<ExportedType>) -> Self {
+    pub fn new(bin: LibraryBinary, types: HashSet<TypeDeclaration>) -> Self {
         Self { bin, types }
     }
 
-    pub fn types(&self) -> &HashSet<ExportedType> {
+    pub fn types(&self) -> &HashSet<TypeDeclaration> {
         &self.types
     }
 
-    pub fn serialize<W: Write>(&self, mut w: W) -> Result<(), std::io::Error> {
+    pub(super) fn serialize<W: Write>(&self, mut w: W) -> Result<(), std::io::Error> {
         // Write magic.
         w.write_all(b"\x7FNLM")?;
 

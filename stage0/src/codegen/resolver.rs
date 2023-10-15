@@ -1,5 +1,5 @@
 use crate::ast::SourceFile;
-use crate::pkg::{ExportedType, PackageMeta};
+use crate::pkg::{PackageMeta, TypeDeclaration};
 use std::collections::HashMap;
 
 /// An object to resolve types.
@@ -33,7 +33,7 @@ impl<'a> TypeResolver<'a> {
 
     pub fn populate_external_types<S>(&mut self, pkg: &'a PackageMeta, types: S)
     where
-        S: IntoIterator<Item = &'a ExportedType>,
+        S: IntoIterator<Item = &'a TypeDeclaration>,
     {
         for ty in types {
             let mut key = pkg.name().as_str().to_owned();
@@ -52,5 +52,5 @@ impl<'a> TypeResolver<'a> {
 /// A type that was resolved by [`TypeResolver`].
 pub enum ResolvedType<'a> {
     Internal(&'a SourceFile),
-    External((&'a PackageMeta, &'a ExportedType)),
+    External((&'a PackageMeta, &'a TypeDeclaration)),
 }

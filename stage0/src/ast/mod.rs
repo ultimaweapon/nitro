@@ -1,14 +1,16 @@
-pub use self::attr::*;
-pub use self::bt::*;
-pub use self::expr::*;
-pub use self::func::*;
-pub use self::imp::*;
-pub use self::path::*;
-pub use self::stmt::*;
-pub use self::ty::*;
-pub use self::using::*;
-
+use self::attr::Attributes;
+use self::bt::BasicType;
+use self::func::{Function, FunctionParam};
+use self::imp::TypeImpl;
+use self::path::Path;
+use self::stmt::Statement;
+use self::ty::{Type, TypeName};
+use self::using::Use;
+use crate::codegen::Codegen;
 use crate::lexer::{Identifier, ImplKeyword, Lexer, SyntaxError, Token};
+use crate::pkg::{Public, TypeDeclaration};
+use std::borrow::Cow;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -58,16 +60,68 @@ impl SourceFile {
         &self.path
     }
 
-    pub fn uses(&self) -> &[Use] {
-        self.uses.as_ref()
+    pub fn has_type(&self) -> bool {
+        self.ty.is_some()
     }
 
-    pub fn ty(&self) -> Option<&TypeDefinition> {
+    fn ty(&self) -> Option<&TypeDefinition> {
         self.ty.as_ref()
     }
 
-    pub fn impls(&self) -> &[TypeImpl] {
-        self.impls.as_ref()
+    pub fn build<'a, 'b: 'a>(
+        &self,
+        cg: &'a Codegen<'b>,
+    ) -> Result<Option<TypeDeclaration>, SyntaxError> {
+        // Get fully qualified type name.
+        let ty = self.ty.as_ref().unwrap();
+        let fqtn = if cg.namespace().is_empty() {
+            Cow::Borrowed(ty.name().value())
+        } else {
+            Cow::Owned(format!("{}.{}", cg.namespace(), ty.name().value()))
+        };
+
+        // Build the type.
+        let pkg = match ty {
+            TypeDefinition::Basic(ty) => {
+                let mut funcs = HashSet::new();
+
+                for im in &self.impls {
+                    for func in im.functions() {
+                        let exp = match func.build(cg, &fqtn, &self.uses)? {
+                            Some(v) => v,
+                            None => continue,
+                        };
+
+                        if func
+                            .attrs()
+                            .public()
+                            .filter(|v| v.1 == Public::External)
+                            .is_some()
+                        {
+                            funcs.insert(exp);
+                        }
+                    }
+                }
+
+                TypeDeclaration::Basic(crate::pkg::BasicType::new(
+                    ty.is_ref(),
+                    ty.attrs().to_external(),
+                    fqtn.into_owned(),
+                    funcs,
+                ))
+            }
+        };
+
+        if ty
+            .attrs()
+            .public()
+            .filter(|p| p.1 == Public::External)
+            .is_some()
+        {
+            Ok(Some(pkg))
+        } else {
+            Ok(None)
+        }
     }
 
     fn parse_top(&mut self, data: String) -> Result<(), SyntaxError> {
@@ -88,7 +142,7 @@ impl SourceFile {
                     self.uses
                         .push(Use::parse(&mut lex, attrs.take().unwrap_or_default(), def)?)
                 }
-                Token::StructKeyword(def) => {
+                Token::StructKeyword(_) => {
                     let name = lex.next_ident()?;
                     self.can_define_type(&name)?;
                     self.ty = Some(TypeDefinition::Basic(Self::parse_basic(
@@ -98,7 +152,7 @@ impl SourceFile {
                         name,
                     )?));
                 }
-                Token::ClassKeyword(def) => {
+                Token::ClassKeyword(_) => {
                     let name = lex.next_ident()?;
                     self.can_define_type(&name)?;
                     self.ty = Some(TypeDefinition::Basic(Self::parse_basic(
@@ -163,7 +217,7 @@ impl SourceFile {
         name: Identifier,
     ) -> Result<BasicType, SyntaxError> {
         // Check if body available.
-        let tok = match lex.next()? {
+        match lex.next()? {
             Some(Token::Semicolon(_)) => {
                 if !class && attrs.repr().is_none() {
                     return Err(SyntaxError::new(
@@ -182,7 +236,7 @@ impl SourceFile {
                     "expect either ';' or '}' after this",
                 ));
             }
-        };
+        }
 
         // Parse fields.
         loop {
@@ -457,7 +511,7 @@ impl SourceFile {
 }
 
 /// A type definition in a source file.
-pub enum TypeDefinition {
+enum TypeDefinition {
     Basic(BasicType),
 }
 

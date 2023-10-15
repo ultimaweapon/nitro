@@ -1,8 +1,8 @@
 use super::Attributes;
 use crate::lexer::Identifier;
 
-/// An implementation of [`crate::ty::BasicType`] for a type from source file.
-pub struct BasicType {
+/// A struct or class in a source file.
+pub(super) struct BasicType {
     attrs: Attributes,
     is_ref: bool,
     name: Identifier,
@@ -21,21 +21,11 @@ impl BasicType {
         &self.attrs
     }
 
-    pub fn name(&self) -> &Identifier {
-        &self.name
-    }
-}
-
-impl crate::ty::BasicType for BasicType {
-    fn is_ref(&self) -> bool {
+    pub fn is_ref(&self) -> bool {
         self.is_ref
     }
 
-    fn attrs(&self) -> &dyn crate::ty::Attributes {
-        &self.attrs
-    }
-
-    fn name(&self) -> &str {
-        self.name.value()
+    pub fn name(&self) -> &Identifier {
+        &self.name
     }
 }

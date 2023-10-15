@@ -15,7 +15,6 @@ mod ffi;
 mod lexer;
 mod pkg;
 mod project;
-mod ty;
 mod zstd;
 
 fn main() -> ExitCode {

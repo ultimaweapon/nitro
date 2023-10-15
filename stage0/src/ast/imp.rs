@@ -2,7 +2,7 @@ use super::Function;
 use crate::lexer::{Identifier, ImplKeyword, Span};
 
 /// An implementation block for a type.
-pub struct TypeImpl {
+pub(super) struct TypeImpl {
     def: ImplKeyword,
     ty: Identifier,
     functions: Vec<Function>,

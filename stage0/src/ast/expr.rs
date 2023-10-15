@@ -5,7 +5,7 @@ use crate::lexer::{
 };
 
 /// An expression.
-pub enum Expression {
+pub(super) enum Expression {
     Value(Identifier),
     Call(Call),
     Equal(Equals, Equals),
@@ -301,7 +301,7 @@ impl Expression {
 }
 
 /// A function call.
-pub struct Call {
+pub(super) struct Call {
     name: Path,
     args: Vec<Vec<Expression>>,
 }
@@ -317,7 +317,7 @@ impl Call {
 }
 
 /// An inline assembly (e.g. `asm("nop")`).
-pub struct Asm {
+pub(super) struct Asm {
     def: AsmKeyword,
     inst: StringLiteral,
     inputs: Vec<(AsmIn, Vec<Expression>)>,
@@ -345,17 +345,17 @@ impl Asm {
 }
 
 /// An input of the inline assembly (e.g. `in("rax")`).
-pub enum AsmIn {
+pub(super) enum AsmIn {
     Register(StringLiteral),
 }
 
 /// An output of the inline assembly (e.h. `out("rax")`).
-pub enum AsmOut {
+pub(super) enum AsmOut {
     Never(ExclamationMark),
 }
 
 /// An if expression.
-pub struct If {
+pub(super) struct If {
     def: IfKeyword,
     cond: Vec<Expression>,
     body: Vec<Statement>,

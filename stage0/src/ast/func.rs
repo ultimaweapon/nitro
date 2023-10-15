@@ -1,11 +1,12 @@
-use super::{Attributes, Extern, Statement, Type, Use};
+use super::{Attributes, Statement, Type, Use};
 use crate::codegen::{BasicBlock, Builder, Codegen, LlvmFunc, LlvmType, LlvmVoid};
 use crate::lexer::{Identifier, SyntaxError};
+use crate::pkg::Extern;
 use std::borrow::Cow;
 use std::ffi::CString;
 
-/// A function.
-pub struct Function {
+/// A function in the source file.
+pub(super) struct Function {
     attrs: Attributes,
     name: Identifier,
     params: Vec<FunctionParam>,
@@ -34,35 +35,54 @@ impl Function {
         &self.attrs
     }
 
-    pub fn name(&self) -> &Identifier {
-        &self.name
-    }
-
-    pub fn params(&self) -> &[FunctionParam] {
-        self.params.as_ref()
-    }
-
-    pub fn ret(&self) -> Option<&Type> {
-        self.ret.as_ref()
-    }
-
     pub fn build<'a, 'b: 'a, U: IntoIterator<Item = &'a Use> + Clone>(
         &self,
         cx: &'a Codegen<'b>,
         container: &str,
         uses: U,
-    ) -> Result<Option<LlvmFunc<'a, 'b>>, SyntaxError> {
+    ) -> Result<Option<crate::pkg::Function>, SyntaxError> {
         // Check condition.
-        if let Some((_, cond)) = self.attrs.condition() {
-            if !cx.check_condition(cond)? {
-                return Ok(None);
-            }
+        if !self.attrs.run_condition(cx)? {
+            return Ok(None);
         }
+
+        // Get public type.
+        let ext = crate::pkg::Function::new(
+            self.name.value().to_owned(),
+            {
+                let mut params = Vec::with_capacity(self.params.len());
+
+                for p in &self.params {
+                    let t = match p.ty.to_external(cx, uses.clone()) {
+                        Some(v) => v,
+                        None => return Err(SyntaxError::new(p.ty.name().span(), "undefined type")),
+                    };
+
+                    params.push(crate::pkg::FunctionParam::new(p.name.value().to_owned(), t));
+                }
+
+                params
+            },
+            match &self.ret {
+                Some(v) => match v.to_external(cx, uses.clone()) {
+                    Some(v) => v,
+                    None => return Err(SyntaxError::new(v.name().span(), "undefined type")),
+                },
+                None => crate::pkg::Type::Unit { ptr: 0 },
+            },
+        );
 
         // Build function name.
         let name = match self.attrs.ext() {
             Some((_, Extern::C)) => Cow::Borrowed(self.name.value()),
-            None => Cow::Owned(cx.mangle(uses.clone(), container, self)?),
+            None => Cow::Owned(ext.mangle(
+                if cx.executable() {
+                    None
+                } else {
+                    Some((cx.pkg().as_str(), cx.version().major()))
+                },
+                container,
+            )),
         };
 
         // Check if function already exists.
@@ -120,7 +140,7 @@ impl Function {
             }
         }
 
-        Ok(Some(func))
+        Ok(Some(ext))
     }
 
     fn build_body<'a, 'b: 'a>(
@@ -137,8 +157,8 @@ impl Function {
     }
 }
 
-/// A function parameter.
-pub struct FunctionParam {
+/// A parameter of a function in the source file.
+pub(super) struct FunctionParam {
     name: Identifier,
     ty: Type,
 }
@@ -146,13 +166,5 @@ pub struct FunctionParam {
 impl FunctionParam {
     pub fn new(name: Identifier, ty: Type) -> Self {
         Self { name, ty }
-    }
-
-    pub fn name(&self) -> &Identifier {
-        &self.name
-    }
-
-    pub fn ty(&self) -> &Type {
-        &self.ty
     }
 }

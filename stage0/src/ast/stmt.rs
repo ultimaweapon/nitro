@@ -1,8 +1,9 @@
-use super::{Attributes, Expression};
+use super::expr::Expression;
+use super::Attributes;
 use crate::lexer::{Identifier, LetKeyword, Lexer, SyntaxError, Token};
 
 /// A statement.
-pub enum Statement {
+pub(super) enum Statement {
     Let(Let),
     Unit(Vec<Expression>),
     Value(Vec<Expression>),
@@ -98,7 +99,7 @@ impl Statement {
 }
 
 /// A let statement.
-pub struct Let {
+pub(super) struct Let {
     attrs: Attributes,
     def: LetKeyword,
     var: Identifier,
