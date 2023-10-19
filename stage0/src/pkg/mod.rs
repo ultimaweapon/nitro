@@ -49,6 +49,10 @@ impl Package {
         Self { meta, exes, libs }
     }
 
+    pub fn meta(&self) -> &PackageMeta {
+        &self.meta
+    }
+
     pub fn pack<F: AsRef<Path>>(&self, file: F) -> Result<(), PackagePackError> {
         // Create a package file.
         let path = file.as_ref();
@@ -130,13 +134,88 @@ impl Package {
     pub fn export<T>(
         &self,
         to: T,
+        target: &Target,
         targets: &TargetResolver,
         deps: &DependencyResolver,
     ) -> Result<(), PackageExportError>
     where
         T: AsRef<Path>,
     {
-        todo!()
+        // Create destination directory.
+        let to = to.as_ref();
+
+        if let Err(e) = std::fs::create_dir_all(to) {
+            return Err(PackageExportError::CreateDirectoryFailed(to.to_owned(), e));
+        }
+
+        // Resolve primitive target.
+        let pt = match targets.primitive(target) {
+            Ok(v) => v,
+            Err(e) => return Err(PackageExportError::ResolvePrimitiveTargetFailed(e)),
+        };
+
+        // If there is an executable, export it otherwise export a library instead.
+        let base = self.meta.name();
+        let (from, to) = if self.exes.is_empty() {
+            let lib = self
+                .libs
+                .get(target)
+                .ok_or(PackageExportError::TargetNotFound)?;
+
+            // Get binary path.
+            let from = match lib.bin.bin() {
+                LibraryBinary::Bundle(v) => v,
+                LibraryBinary::System(_) => return Err(PackageExportError::SystemLibrary),
+            };
+
+            // Get destination path.
+            let ver = self.meta.version().major();
+            let to = to.join(match pt.os() {
+                TargetOs::Darwin => {
+                    if ver == 0 {
+                        format!("lib{base}.dylib")
+                    } else {
+                        format!("lib{base}-v{ver}.dylib")
+                    }
+                }
+                TargetOs::Linux => {
+                    if ver == 0 {
+                        format!("lib{base}.so")
+                    } else {
+                        format!("lib{base}-v{ver}.so")
+                    }
+                }
+                TargetOs::Win32 => {
+                    if ver == 0 {
+                        format!("{base}.dll")
+                    } else {
+                        format!("{base}-v{ver}.dll")
+                    }
+                }
+            });
+
+            (from, to)
+        } else {
+            let exe = self
+                .exes
+                .get(target)
+                .ok_or(PackageExportError::TargetNotFound)?;
+
+            // Get destination path.
+            let to = to.join(match pt.os() {
+                TargetOs::Darwin | TargetOs::Linux => base.as_str().to_owned(),
+                TargetOs::Win32 => format!("{base}.exe"),
+            });
+
+            (&exe.bin, to)
+        };
+
+        // Export.
+        if let Err(e) = std::fs::copy(from, &to) {
+            return Err(PackageExportError::CopyFailed(from.clone(), to, e));
+        }
+
+        Ok(())
     }
 
     pub fn unpack<F, T>(file: F, to: T) -> Result<(), PackageUnpackError>
@@ -186,7 +265,22 @@ impl From<std::io::Error> for PackagePackError {
 
 /// Represents an error when a package is failed to export.
 #[derive(Debug, Error)]
-pub enum PackageExportError {}
+pub enum PackageExportError {
+    #[error("cannot create {0}")]
+    CreateDirectoryFailed(PathBuf, #[source] std::io::Error),
+
+    #[error("cannot resolve primitive target")]
+    ResolvePrimitiveTargetFailed(#[source] TargetResolveError),
+
+    #[error("no binary for the specified target")]
+    TargetNotFound,
+
+    #[error("a system library cannot be exported")]
+    SystemLibrary,
+
+    #[error("cannot copy {0} to {1}")]
+    CopyFailed(PathBuf, PathBuf, #[source] std::io::Error),
+}
 
 /// Represents an error when a package is failed to unpack.
 #[derive(Debug, Error)]

@@ -3,6 +3,7 @@ use std::ffi::c_char;
 #[allow(improper_ctypes)]
 extern "C" {
     pub fn llvm_init();
+    pub fn llvm_process_triple(t: &mut String);
     pub fn llvm_target_lookup(triple: *const c_char, err: &mut String) -> *const LlvmTarget;
     pub fn llvm_target_create_machine(
         target: *const LlvmTarget,

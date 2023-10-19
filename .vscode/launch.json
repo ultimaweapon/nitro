@@ -15,13 +15,13 @@
       "preLaunchTask": "build"
     },
     {
-      "name": "Export",
+      "name": "Pack",
       "type": "lldb",
       "request": "launch",
       "program": "${workspaceFolder}/dist/bin/nitro",
       "args": [
-        "build",
-        "--pkg",
+        "pack",
+        "--output",
         "${workspaceFolder}/dist/share/nitro/nitro.npk"
       ],
       "cwd": "${workspaceFolder}",

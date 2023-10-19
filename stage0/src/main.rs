@@ -1,6 +1,6 @@
 use crate::ast::ParseError;
 use crate::ffi::llvm_init;
-use crate::pkg::{DependencyResolver, TargetResolver};
+use crate::pkg::{DependencyResolver, Package, PrimitiveTarget, Target, TargetResolver};
 use crate::project::{Project, ProjectBuildError, ProjectLoadError};
 use clap::{command, value_parser, Arg, ArgMatches, Command};
 use std::borrow::Cow;
@@ -19,36 +19,45 @@ mod zstd;
 
 fn main() -> ExitCode {
     // Parse arguments.
+    let project = Arg::new("project")
+        .help("Path to the project (default to current directory)")
+        .value_name("PROJECT")
+        .value_parser(value_parser!(PathBuf));
     let args = command!()
         .subcommand_required(true)
         .subcommand(
             Command::new("build")
                 .about("Build a Nitro project")
+                .arg(project.clone()),
+        )
+        .subcommand(
+            Command::new("pack")
+                .about("Create a Nitro package")
                 .arg(
-                    Arg::new("export")
-                        .help("Export all binaries to the specified directory")
+                    Arg::new("output")
+                        .help("Path of the output file (default to NAME.npk)")
                         .short('o')
-                        .long("outputs")
-                        .value_name("DIRECTORY")
-                        .value_parser(value_parser!(PathBuf)),
-                )
-                .arg(
-                    Arg::new("package")
-                        .help("Export a package to the specified file")
-                        .long("pkg")
+                        .long("output")
                         .value_name("FILE")
                         .value_parser(value_parser!(PathBuf)),
                 )
+                .arg(project.clone()),
+        )
+        .subcommand(
+            Command::new("export")
+                .about("Export binaries")
                 .arg(
-                    Arg::new("project")
-                        .help("Path to the project (default to current directory)")
-                        .value_name("PATH")
-                        .value_parser(value_parser!(PathBuf)),
-                ),
+                    Arg::new("outputs")
+                        .help("Path to the directory to place the binaries")
+                        .value_name("DEST")
+                        .value_parser(value_parser!(PathBuf))
+                        .required(true),
+                )
+                .arg(project),
         )
         .get_matches();
 
-    // Get path to stubs.
+    // Get executable path.
     let exe = match std::env::current_exe() {
         Ok(v) => v,
         Err(e) => {
@@ -86,13 +95,24 @@ fn main() -> ExitCode {
     };
 
     // Execute the command.
+    let cx = Context {
+        prefix: exe.parent().unwrap().parent().unwrap(),
+        targets: TargetResolver::new(),
+        deps: DependencyResolver::new(),
+    };
+
     match args.subcommand().unwrap() {
-        ("build", args) => build(args, &exe),
+        ("build", args) => match build(args, &cx) {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(v) => v,
+        },
+        ("pack", args) => pack(args, &cx),
+        ("export", args) => export(args, &cx),
         _ => todo!(),
     }
 }
 
-fn build(args: &ArgMatches, exe: &Path) -> ExitCode {
+fn build(args: &ArgMatches, cx: &Context) -> Result<Package, ExitCode> {
     // Initialize LLVM.
     unsafe { llvm_init() };
 
@@ -102,24 +122,18 @@ fn build(args: &ArgMatches, exe: &Path) -> ExitCode {
         None => Cow::Owned(std::env::current_dir().unwrap()),
     };
 
-    // Setup target resolver.
-    let targets = TargetResolver::new();
-
     // Get path to stubs.
-    let mut stubs = exe.parent().unwrap().parent().unwrap().join("share");
+    let mut stubs = cx.prefix.join("share");
 
     stubs.push("nitro");
     stubs.push("stub");
 
-    // Setup dependency resolver.
-    let deps = DependencyResolver::new();
-
     // Open the project.
-    let mut project = match Project::open(path.as_ref(), &targets, &stubs, &deps) {
+    let mut project = match Project::open(path.as_ref(), &cx.targets, &stubs, &cx.deps) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("Cannot open {}: {}.", path.display(), join_nested(&e));
-            return ExitCode::FAILURE;
+            return Err(ExitCode::FAILURE);
         }
     };
 
@@ -136,44 +150,69 @@ fn build(args: &ArgMatches, exe: &Path) -> ExitCode {
             ),
         }
 
-        return ExitCode::FAILURE;
+        return Err(ExitCode::FAILURE);
     }
 
     // Build the project.
-    let pkg = match project.build() {
+    project.build().map_err(|e| {
+        match e {
+            ProjectBuildError::InvalidSyntax(p, e) => {
+                eprintln!("{}: {}", p.display(), e);
+            }
+            ProjectBuildError::BuildFailed(p, e) => {
+                eprintln!("Cannot build {}: {}", p.display(), e);
+            }
+            e => eprintln!("{}: {}", project.path().display(), join_nested(&e)),
+        }
+
+        ExitCode::FAILURE
+    })
+}
+
+fn pack(args: &ArgMatches, cx: &Context) -> ExitCode {
+    // Build.
+    let pkg = match build(args, cx) {
         Ok(v) => v,
-        Err(ProjectBuildError::InvalidSyntax(p, e)) => {
-            eprintln!("{}: {}", p.display(), e);
-            return ExitCode::FAILURE;
-        }
-        Err(ProjectBuildError::BuildFailed(p, e)) => {
-            eprintln!("Cannot build {}: {}", p.display(), e);
-            return ExitCode::FAILURE;
-        }
-        Err(e) => {
-            eprintln!("{}: {}", project.path().display(), join_nested(&e));
-            return ExitCode::FAILURE;
+        Err(e) => return e,
+    };
+
+    // Get output path.
+    let path = match args.get_one::<PathBuf>("output") {
+        Some(v) => Cow::Borrowed(v.as_path()),
+        None => {
+            let mut p = std::env::current_dir().unwrap();
+            p.push(format!("{}.npk", pkg.meta().name()));
+            Cow::Owned(p)
         }
     };
 
-    // Export the binaries.
-    if let Some(path) = args.get_one::<PathBuf>("export") {
-        if let Err(e) = pkg.export(&path, &targets, &deps) {
-            eprintln!(
-                "Cannot export the binaries to {}: {}.",
-                path.display(),
-                join_nested(&e)
-            );
-            return ExitCode::FAILURE;
-        }
+    // Pack.
+    if let Err(e) = pkg.pack(path.as_ref()) {
+        eprintln!("Cannot pack {}: {}.", path.display(), join_nested(&e));
+        return ExitCode::FAILURE;
     }
 
-    // Export the package.
-    if let Some(path) = args.get_one::<PathBuf>("package") {
-        if let Err(e) = pkg.pack(&path) {
-            eprintln!("Cannot pack {}: {}.", path.display(), join_nested(&e));
-            return ExitCode::FAILURE;
-        }
+    ExitCode::SUCCESS
+}
+
+fn export(args: &ArgMatches, cx: &Context) -> ExitCode {
+    // Build.
+    let pkg = match build(args, cx) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+
+    // Export the binaries.
+    let tartet = Target::Primitive(PrimitiveTarget::current());
+    let path = args.get_one::<PathBuf>("outputs").unwrap();
+
+    if let Err(e) = pkg.export(path, &tartet, &cx.targets, &cx.deps) {
+        eprintln!(
+            "Cannot export the binaries to {}: {}.",
+            path.display(),
+            join_nested(&e)
+        );
+        return ExitCode::FAILURE;
     }
 
     ExitCode::SUCCESS
@@ -188,4 +227,10 @@ fn join_nested(mut e: &dyn Error) -> String {
     }
 
     m
+}
+
+struct Context<'a> {
+    prefix: &'a Path,
+    targets: TargetResolver,
+    deps: DependencyResolver,
 }

@@ -31,6 +31,10 @@ impl Library {
         Self { bin, types }
     }
 
+    pub fn bin(&self) -> &LibraryBinary {
+        &self.bin
+    }
+
     pub fn types(&self) -> &HashSet<TypeDeclaration> {
         &self.types
     }

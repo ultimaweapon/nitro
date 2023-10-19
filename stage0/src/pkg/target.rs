@@ -1,6 +1,8 @@
+use crate::ffi::llvm_process_triple;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+use std::str::FromStr;
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 
@@ -108,6 +110,12 @@ impl PrimitiveTarget {
         },
     ];
 
+    pub fn current() -> &'static Self {
+        let mut name = String::new();
+        unsafe { llvm_process_triple(&mut name) };
+        name.parse().unwrap()
+    }
+
     pub fn arch(&self) -> TargetArch {
         self.arch
     }
@@ -118,6 +126,62 @@ impl PrimitiveTarget {
 
     pub fn env(&self) -> Option<TargetEnv> {
         self.env
+    }
+}
+
+impl FromStr for &'static PrimitiveTarget {
+    type Err = PrimitiveTargetError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Get architecture.
+        let mut parts = s.split('-');
+        let arch = match parts.next().ok_or(PrimitiveTargetError::InvalidTriple)? {
+            "aarch64" => TargetArch::AArch64,
+            "x86_64" => TargetArch::X86_64,
+            v => return Err(PrimitiveTargetError::UnknownArch(v.to_owned())),
+        };
+
+        // Get vendor.
+        let vendor = match parts.next().ok_or(PrimitiveTargetError::InvalidTriple)? {
+            "apple" => TargetVendor::Apple,
+            "pc" => TargetVendor::Pc,
+            "unknown" => TargetVendor::Unknown,
+            v => return Err(PrimitiveTargetError::UnknownVendor(v.to_owned())),
+        };
+
+        // Get OS.
+        let os = match parts.next().ok_or(PrimitiveTargetError::InvalidTriple)? {
+            "darwin" => TargetOs::Darwin,
+            "linux" => TargetOs::Linux,
+            "win32" => TargetOs::Win32,
+            v => return Err(PrimitiveTargetError::UnknownOs(v.to_owned())),
+        };
+
+        // Get environment.
+        let env = match parts.next() {
+            Some(v) => {
+                let v = match v {
+                    "gnu" => TargetEnv::Gnu,
+                    "msvc" => TargetEnv::Msvc,
+                    v => return Err(PrimitiveTargetError::UnknownEnv(v.to_owned())),
+                };
+
+                if parts.next().is_some() {
+                    return Err(PrimitiveTargetError::InvalidTriple);
+                }
+
+                Some(v)
+            }
+            None => None,
+        };
+
+        // Lookup.
+        let target = PrimitiveTarget::ALL
+            .iter()
+            .find(move |&t| t.arch == arch && t.vendor == vendor && t.os == os && t.env == env)
+            .unwrap();
+
+        Ok(target)
     }
 }
 
@@ -229,3 +293,22 @@ impl TargetEnv {
 /// Represents an error when [`TargetResolver`] is failed.
 #[derive(Debug, Error)]
 pub enum TargetResolveError {}
+
+/// Represents an error parsing a [`PrimitiveTarget`] from a string is failed.
+#[derive(Debug, Error)]
+pub enum PrimitiveTargetError {
+    #[error("invalid triple format")]
+    InvalidTriple,
+
+    #[error("unknown architecture '{0}'")]
+    UnknownArch(String),
+
+    #[error("unknown vendor '{0}'")]
+    UnknownVendor(String),
+
+    #[error("unknown OS '{0}'")]
+    UnknownOs(String),
+
+    #[error("unknown environment '{0}'")]
+    UnknownEnv(String),
+}
