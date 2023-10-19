@@ -21,4 +21,4 @@ mkdir -p "$dir/stub/win32-x86_64"
   /out:"$dir/stub/win32-x86_64/msvcrt.lib"
 
 # std
-./dist/bin/nitro build --pkg "$dir/nitro.npk"
+./dist/bin/nitro pack --output "$dir/nitro.npk"

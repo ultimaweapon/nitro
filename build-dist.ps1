@@ -28,7 +28,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # std
-.\dist\bin\nitro.exe build --pkg dist\share\nitro\nitro.npk
+.\dist\bin\nitro.exe pack --output dist\share\nitro\nitro.npk
 
 if ($LASTEXITCODE -ne 0) {
     exit 1
