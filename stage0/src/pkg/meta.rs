@@ -1,6 +1,8 @@
 use serde::de::{Error, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::fmt::{Display, Formatter};
+use std::str::FromStr;
+use thiserror::Error;
 
 /// Metadata for a Nitro package.
 pub struct PackageMeta {
@@ -41,32 +43,6 @@ impl PackageName {
         bin[..src.len()].copy_from_slice(src);
         bin
     }
-
-    fn is_valid(v: &str) -> bool {
-        // Check length.
-        if v.is_empty() || v.len() > 32 {
-            return false;
-        }
-
-        // Check first char.
-        let mut i = v.as_bytes().into_iter();
-        let b = i.next().unwrap();
-
-        if !b.is_ascii_lowercase() {
-            return false;
-        }
-
-        // Check remaining chars.
-        for b in i {
-            if b.is_ascii_digit() || b.is_ascii_lowercase() {
-                continue;
-            }
-
-            return false;
-        }
-
-        true
-    }
 }
 
 impl<'a> Deserialize<'a> for PackageName {
@@ -75,6 +51,38 @@ impl<'a> Deserialize<'a> for PackageName {
         D: Deserializer<'a>,
     {
         deserializer.deserialize_any(PackageNameVisitor)
+    }
+}
+
+impl FromStr for PackageName {
+    type Err = PackageNameError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Check length.
+        if s.is_empty() {
+            return Err(PackageNameError::EmptyName);
+        } else if s.len() > 32 {
+            return Err(PackageNameError::NameTooLong);
+        }
+
+        // Check first char.
+        let mut i = s.as_bytes().into_iter();
+        let b = i.next().unwrap();
+
+        if !b.is_ascii_lowercase() {
+            return Err(PackageNameError::NotStartWithLowerCase);
+        }
+
+        // Check remaining chars.
+        for b in i {
+            if b.is_ascii_digit() || b.is_ascii_lowercase() {
+                continue;
+            }
+
+            return Err(PackageNameError::NotDigitOrLowerCase);
+        }
+
+        Ok(Self(s.to_owned()))
     }
 }
 
@@ -131,11 +139,9 @@ impl<'a> Visitor<'a> for PackageNameVisitor {
     where
         E: Error,
     {
-        if PackageName::is_valid(value) {
-            Ok(PackageName(value.to_owned()))
-        } else {
-            Err(Error::invalid_value(Unexpected::Str(value), &self))
-        }
+        value
+            .parse()
+            .map_err(|_| Error::invalid_value(Unexpected::Str(value), &self))
     }
 }
 
@@ -175,4 +181,20 @@ impl<'a> Visitor<'a> for PackageVersionVisitor {
             patch,
         })
     }
+}
+
+/// Represents an error when [`PackageName`] is failed to construct.
+#[derive(Debug, Error)]
+pub enum PackageNameError {
+    #[error("name cannot be empty")]
+    EmptyName,
+
+    #[error("name cannot exceed 32 bytes")]
+    NameTooLong,
+
+    #[error("name must start with a lower-case ASCII")]
+    NotStartWithLowerCase,
+
+    #[error("name cannot contains other alphabet except digits or lowe-case ASCIIs")]
+    NotDigitOrLowerCase,
 }
