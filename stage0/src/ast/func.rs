@@ -53,21 +53,14 @@ impl Function {
                 let mut params = Vec::with_capacity(self.params.len());
 
                 for p in &self.params {
-                    let t = match p.ty.to_external(cx, uses.clone()) {
-                        Some(v) => v,
-                        None => return Err(SyntaxError::new(p.ty.name().span(), "undefined type")),
-                    };
-
+                    let t = p.ty.to_external(cx, uses.clone())?;
                     params.push(crate::pkg::FunctionParam::new(p.name.value().to_owned(), t));
                 }
 
                 params
             },
             match &self.ret {
-                Some(v) => match v.to_external(cx, uses.clone()) {
-                    Some(v) => v,
-                    None => return Err(SyntaxError::new(v.name().span(), "undefined type")),
-                },
+                Some(v) => v.to_external(cx, uses.clone())?,
                 None => crate::pkg::Type::Unit { ptr: 0 },
             },
         );

@@ -32,13 +32,14 @@ impl Type {
         let mut ty = match &self.name {
             TypeName::Unit(_, _) => LlvmType::Void(LlvmVoid::new(cx)),
             TypeName::Never(_) => return Ok(None),
-            TypeName::Ident(n) => match Self::resolve(cx, uses, n) {
-                Some((n, t)) => match t {
+            TypeName::Ident(n) => {
+                let (n, t) = Self::resolve(cx, uses, n)?;
+
+                match t {
                     ResolvedType::Internal(v) => Self::build_internal_type(cx, &n, v),
                     ResolvedType::External((_, t)) => Self::build_external_type(cx, &n, t),
-                },
-                None => return Err(SyntaxError::new(n.span(), "type is undefined")),
-            },
+                }
+            }
         };
 
         // Resolve pointers.
@@ -53,7 +54,7 @@ impl Type {
         &self,
         cx: &Codegen<'b>,
         uses: U,
-    ) -> Option<crate::pkg::Type> {
+    ) -> Result<crate::pkg::Type, SyntaxError> {
         use crate::pkg::Type;
 
         let ptr = self.prefixes.len();
@@ -97,7 +98,7 @@ impl Type {
             }
         };
 
-        Some(ty)
+        Ok(ty)
     }
 
     fn build_internal_type<'a, 'b: 'a>(
@@ -176,9 +177,9 @@ impl Type {
         cg: &Codegen<'b>,
         uses: U,
         name: &Path,
-    ) -> Option<(String, &'b ResolvedType<'b>)> {
+    ) -> Result<(String, &'b ResolvedType<'b>), SyntaxError> {
         // Resolve full name.
-        let name = match name.as_local() {
+        let (name, span) = match name.as_local() {
             Some(name) => {
                 // Search from use declarations first to allow overrides.
                 let mut found = None;
@@ -199,23 +200,26 @@ impl Type {
                 }
 
                 match found {
-                    Some(v) => v.name().to_string(),
+                    Some(v) => (v.name().to_string(), v.name().span()),
                     None => {
-                        if cg.namespace().is_empty() {
+                        let fqtn = if cg.namespace().is_empty() {
                             format!("self.{}", name)
                         } else {
                             format!("self.{}.{}", cg.namespace(), name)
-                        }
+                        };
+
+                        (fqtn, name.span().clone())
                     }
                 }
             }
-            None => name.to_string(),
+            None => (name.to_string(), name.span()),
         };
 
         // Resolve type.
-        let ty = cg.resolver().resolve(&name)?;
-
-        Some((name, ty))
+        match cg.resolver().resolve(&name) {
+            Some(ty) => Ok((name, ty)),
+            None => Err(SyntaxError::new(span, "undefined type")),
+        }
     }
 }
 
