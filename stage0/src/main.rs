@@ -113,11 +113,18 @@ fn main() -> ExitCode {
         }
     };
 
+    // Get std path.
+    let prefix = exe.parent().unwrap().parent().unwrap();
+    let mut std = prefix.join("share");
+
+    std.push("nitro");
+    std.push("nitro.npk");
+
     // Execute the command.
     let cx = Context {
-        prefix: exe.parent().unwrap().parent().unwrap(),
+        prefix,
         targets: TargetResolver::new(),
-        deps: DependencyResolver::new(),
+        deps: DependencyResolver::new(std),
     };
 
     match args.subcommand().unwrap() {

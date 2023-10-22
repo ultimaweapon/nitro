@@ -4,9 +4,9 @@ use crate::ast::{ParseError, SourceFile};
 use crate::codegen::{BuildError, Codegen, TypeResolver};
 use crate::lexer::SyntaxError;
 use crate::pkg::{
-    Binary, DependencyResolver, Library, LibraryBinary, Package, PackageMeta, PackageName,
-    PackageVersion, PrimitiveTarget, Target, TargetArch, TargetEnv, TargetOs, TargetResolveError,
-    TargetResolver, TypeDeclaration,
+    Binary, Dependency, DependencyResolveError, DependencyResolver, Library, LibraryBinary,
+    Package, PackageMeta, PackageName, PackageVersion, PrimitiveTarget, Target, TargetArch,
+    TargetEnv, TargetOs, TargetResolveError, TargetResolver, TypeDeclaration,
 };
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -104,6 +104,18 @@ impl<'a> Project<'a> {
         let mut exes = HashMap::new();
         let mut libs = HashMap::new();
 
+        // Resolve dependencies.
+        let mut deps = Vec::new();
+
+        if pkg.name() != "nitro" {
+            let id = Dependency::new("nitro".parse().unwrap(), PackageVersion::new(1, 0, 0));
+
+            match self.deps.resolve(&id) {
+                Ok(v) => deps.push(v),
+                Err(e) => return Err(ProjectBuildError::ResolveDependencyFailed(id, e)),
+            };
+        }
+
         // Build library.
         if !self.lib.is_empty() {
             let root = self.meta.library().unwrap().sources();
@@ -113,6 +125,13 @@ impl<'a> Project<'a> {
                 let mut resolver = TypeResolver::new();
 
                 resolver.populate_internal_types(&self.lib);
+
+                // Populate types from dependencies.
+                for dep in &deps {
+                    if let Some(lib) = self.resolve_lib(target.clone(), dep.libs())? {
+                        resolver.populate_external_types(dep.meta(), lib.bin().types());
+                    }
+                }
 
                 // Build.
                 let br = self.build_for(root, false, &target, &self.lib, &resolver)?;
@@ -142,29 +161,15 @@ impl<'a> Project<'a> {
 
                 // Populate types from package library.
                 if !libs.is_empty() {
-                    // Resolve library.
-                    let mut target = target.clone();
-                    let lib = loop {
-                        if let Some(v) = libs.get(&target) {
-                            break Some(v);
-                        }
-
-                        target = match self.targets.parent(&target) {
-                            Ok(v) => match v {
-                                Some(v) => v,
-                                None => break None,
-                            },
-                            Err(e) => {
-                                return Err(ProjectBuildError::ResolveParentTargetFailed(
-                                    target, e,
-                                ));
-                            }
-                        };
-                    };
-
-                    // Add types to resolver.
-                    if let Some(lib) = lib {
+                    if let Some(lib) = self.resolve_lib(target.clone(), &libs)? {
                         resolver.populate_external_types(&meta, lib.bin().types());
+                    }
+                }
+
+                // Populate types from dependencies.
+                for dep in &deps {
+                    if let Some(lib) = self.resolve_lib(target.clone(), dep.libs())? {
+                        resolver.populate_external_types(dep.meta(), lib.bin().types());
                     }
                 }
 
@@ -276,6 +281,26 @@ impl<'a> Project<'a> {
         }
 
         Ok(())
+    }
+
+    fn resolve_lib<'b>(
+        &self,
+        mut target: Target,
+        libs: &'b HashMap<Target, Binary<Library>>,
+    ) -> Result<Option<&'b Binary<Library>>, ProjectBuildError> {
+        loop {
+            if let Some(v) = libs.get(&target) {
+                break Ok(Some(v));
+            }
+
+            target = match self.targets.parent(&target) {
+                Ok(v) => match v {
+                    Some(v) => v,
+                    None => break Ok(None),
+                },
+                Err(e) => break Err(ProjectBuildError::ResolveParentTargetFailed(target, e)),
+            };
+        }
     }
 
     fn build_for<'b, R, S>(
@@ -625,6 +650,9 @@ pub enum ProjectLoadError {
 /// Represents an error when a [`Project`] is failed to build.
 #[derive(Debug, Error)]
 pub enum ProjectBuildError {
+    #[error("cannot resolve dependency {0}")]
+    ResolveDependencyFailed(Dependency, #[source] DependencyResolveError),
+
     #[error("cannot resolve primitive target of {0}")]
     ResolvePrimitiveTargetFailed(Target, #[source] TargetResolveError),
 

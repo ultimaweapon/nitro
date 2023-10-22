@@ -28,7 +28,7 @@ impl PackageMeta {
 ///
 /// A package name must start with a lower case ASCII and followed by zero of more 0-9 and a-z (only
 /// lower case). The maximum length is 32 characters.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PackageName(String);
 
 impl PackageName {
@@ -42,6 +42,12 @@ impl PackageName {
 
         bin[..src.len()].copy_from_slice(src);
         bin
+    }
+}
+
+impl PartialEq<str> for PackageName {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
     }
 }
 
@@ -95,7 +101,7 @@ impl Display for PackageName {
 /// A version of a Nitro package.
 ///
 /// This is an implementation of https://semver.org.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PackageVersion {
     major: u16,
     minor: u16,
@@ -103,6 +109,14 @@ pub struct PackageVersion {
 }
 
 impl PackageVersion {
+    pub fn new(major: u16, minor: u16, patch: u16) -> Self {
+        Self {
+            major,
+            minor,
+            patch,
+        }
+    }
+
     pub fn major(&self) -> u16 {
         self.major
     }
@@ -122,6 +136,12 @@ impl<'a> Deserialize<'a> for PackageVersion {
         D: Deserializer<'a>,
     {
         deserializer.deserialize_any(PackageVersionVisitor)
+    }
+}
+
+impl Display for PackageVersion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
     }
 }
 

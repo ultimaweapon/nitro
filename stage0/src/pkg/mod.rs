@@ -53,6 +53,10 @@ impl Package {
         &self.meta
     }
 
+    pub fn libs(&self) -> &HashMap<Target, Binary<Library>> {
+        &self.libs
+    }
+
     pub fn pack<F: AsRef<Path>>(&self, file: F) -> Result<(), PackagePackError> {
         // Create a package file.
         let path = file.as_ref();
