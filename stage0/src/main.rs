@@ -5,6 +5,7 @@ use crate::pkg::{
 };
 use crate::project::{Project, ProjectBuildError, ProjectLoadError};
 use clap::{command, value_parser, Arg, ArgAction, ArgMatches, Command};
+use dirs::home_dir;
 use std::borrow::Cow;
 use std::error::Error;
 use std::fs::OpenOptions;
@@ -113,6 +114,11 @@ fn main() -> ExitCode {
         }
     };
 
+    // Get path to our local data.
+    let mut home = home_dir().unwrap();
+
+    home.push(".nitro");
+
     // Get std path.
     let prefix = exe.parent().unwrap().parent().unwrap();
     let mut std = prefix.join("share");
@@ -124,7 +130,7 @@ fn main() -> ExitCode {
     let cx = Context {
         prefix,
         targets: TargetResolver::new(),
-        deps: DependencyResolver::new(std),
+        deps: DependencyResolver::new(home.join("packages"), std),
     };
 
     match args.subcommand().unwrap() {

@@ -1,11 +1,12 @@
 [package]
 name = "nitro"
-version = "0.1.0"
+version = "1.0.0"
 description = "A CLI to work with Nitro project"
 edition = "2021"
 
 [dependencies]
 clap = { version = "4.4", features = ["cargo"] }
+dirs = "5.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 thiserror = "1.0"

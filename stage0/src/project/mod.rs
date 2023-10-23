@@ -108,7 +108,8 @@ impl<'a> Project<'a> {
         let mut deps = Vec::new();
 
         if pkg.name() != "nitro" {
-            let id = Dependency::new("nitro".parse().unwrap(), PackageVersion::new(1, 0, 0));
+            let version = env!("CARGO_PKG_VERSION").parse().unwrap();
+            let id = Dependency::new("nitro".parse().unwrap(), version);
 
             match self.deps.resolve(&id) {
                 Ok(v) => deps.push(v),

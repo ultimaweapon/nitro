@@ -1,6 +1,7 @@
 use serde::de::{Error, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::fmt::{Display, Formatter};
+use std::num::ParseIntError;
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -28,7 +29,7 @@ impl PackageMeta {
 ///
 /// A package name must start with a lower case ASCII and followed by zero of more 0-9 and a-z (only
 /// lower case). The maximum length is 32 characters.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PackageName(String);
 
 impl PackageName {
@@ -101,7 +102,7 @@ impl Display for PackageName {
 /// A version of a Nitro package.
 ///
 /// This is an implementation of https://semver.org.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PackageVersion {
     major: u16,
     minor: u16,
@@ -136,6 +137,44 @@ impl<'a> Deserialize<'a> for PackageVersion {
         D: Deserializer<'a>,
     {
         deserializer.deserialize_any(PackageVersionVisitor)
+    }
+}
+
+impl FromStr for PackageVersion {
+    type Err = PackageVersionError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Parse major.
+        let mut parts = s.splitn(3, '.');
+        let major = parts
+            .next()
+            .unwrap()
+            .parse()
+            .map_err(|e| PackageVersionError::InvalidMajor(e))?;
+
+        // Parse minor.
+        let minor = match parts.next() {
+            Some(v) => v
+                .parse()
+                .map_err(|e| PackageVersionError::InvalidMinor(e))?,
+            None => return Err(PackageVersionError::NoMinor),
+        };
+
+        // Parse patch.
+        let patch = match parts.next() {
+            Some(v) => v
+                .parse()
+                .map_err(|e| PackageVersionError::InvalidPatch(e))?,
+            None => return Err(PackageVersionError::NoPatch),
+        };
+
+        assert_eq!(parts.next(), None);
+
+        Ok(PackageVersion {
+            major,
+            minor,
+            patch,
+        })
     }
 }
 
@@ -179,27 +218,9 @@ impl<'a> Visitor<'a> for PackageVersionVisitor {
     where
         E: Error,
     {
-        let mut parts = value.splitn(3, '.');
-        let major = parts
-            .next()
-            .and_then(|v| v.parse().ok())
-            .ok_or_else(|| Error::invalid_value(Unexpected::Str(value), &self))?;
-        let minor = parts
-            .next()
-            .and_then(|v| v.parse().ok())
-            .ok_or_else(|| Error::invalid_value(Unexpected::Str(value), &self))?;
-        let patch = parts
-            .next()
-            .and_then(|v| v.parse().ok())
-            .ok_or_else(|| Error::invalid_value(Unexpected::Str(value), &self))?;
-
-        assert_eq!(parts.next(), None);
-
-        Ok(PackageVersion {
-            major,
-            minor,
-            patch,
-        })
+        value
+            .parse()
+            .map_err(|_| Error::invalid_value(Unexpected::Str(value), &self))
     }
 }
 
@@ -217,4 +238,23 @@ pub enum PackageNameError {
 
     #[error("name cannot contains other alphabet except digits or lowe-case ASCIIs")]
     NotDigitOrLowerCase,
+}
+
+/// Represents an error when [`PackageVersion`] is failed to construct.
+#[derive(Debug, Error)]
+pub enum PackageVersionError {
+    #[error("invalid major version")]
+    InvalidMajor(#[source] ParseIntError),
+
+    #[error("no minor version")]
+    NoMinor,
+
+    #[error("invalid minor version")]
+    InvalidMinor(#[source] ParseIntError),
+
+    #[error("no patch number")]
+    NoPatch,
+
+    #[error("invalid patch number")]
+    InvalidPatch(#[source] ParseIntError),
 }

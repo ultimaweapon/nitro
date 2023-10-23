@@ -7,6 +7,7 @@ pub use self::ty::*;
 use crate::zstd::ZstdWriter;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
+use std::io::Read;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -34,10 +35,6 @@ impl Package {
     const ENTRY_DATE: u8 = 3;
     const ENTRY_EXE: u8 = 4;
     const ENTRY_LIB: u8 = 5;
-
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, PackageOpenError> {
-        todo!()
-    }
 
     pub fn new(
         meta: PackageMeta,
@@ -222,11 +219,15 @@ impl Package {
         Ok(())
     }
 
-    pub fn unpack<F, T>(file: F, to: T) -> Result<(), PackageUnpackError>
+    pub fn unpack<P, T>(pkg: P, to: T) -> Result<(), PackageUnpackError>
     where
-        F: AsRef<Path>,
+        P: Read,
         T: AsRef<Path>,
     {
+        todo!()
+    }
+
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, PackageOpenError> {
         todo!()
     }
 }
