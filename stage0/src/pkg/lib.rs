@@ -1,8 +1,9 @@
-use super::TypeDeclaration;
+use super::{TypeDeclaration, TypeDeserializeError};
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use thiserror::Error;
 
 /// A Nitro library.
 ///
@@ -73,10 +74,120 @@ impl Library {
             }
         }
     }
+
+    pub(super) fn unpack<R, B, T>(mut data: R, bin: B, types: T) -> Result<(), LibraryUnpackError>
+    where
+        R: Read,
+        B: AsRef<Path>,
+        T: AsRef<Path>,
+    {
+        // Check magic.
+        let mut magic = [0u8; 4];
+
+        data.read_exact(&mut magic)?;
+
+        if magic.ne(b"\x7FNLM") {
+            return Err(LibraryUnpackError::NotNitroLibrary);
+        }
+
+        // Iterate over the entries.
+        let mut bin = File::create(bin).map_err(LibraryUnpackError::WriteBinaryFailed)?;
+        let mut types = File::create(types).map_err(LibraryUnpackError::WriteTypeFailed)?;
+        let mut sys = None;
+
+        loop {
+            // Read entry type.
+            let mut ty = 0;
+
+            data.read_exact(std::slice::from_mut(&mut ty))?;
+
+            // Process the entry.
+            match ty {
+                Self::ENTRY_END => break,
+                Self::ENTRY_TYPES => {
+                    // Read types count.
+                    let mut buf = [0u8; 4];
+                    data.read_exact(&mut buf)?;
+                    let ntype: usize = u32::from_be_bytes(buf).try_into().unwrap();
+
+                    // Read types.
+                    for i in 0..ntype {
+                        let ty = TypeDeclaration::deserialize(&mut data)
+                            .map_err(|e| LibraryUnpackError::ReadTypeFailed(i, e))?;
+                        ty.serialize(&mut types)
+                            .map_err(LibraryUnpackError::WriteTypeFailed)?;
+                    }
+                }
+                Self::ENTRY_SYSTEM => {
+                    // Read name length.
+                    let mut buf = [0u8; 2];
+                    data.read_exact(&mut buf)?;
+                    let len: usize = u16::from_be_bytes(buf).into();
+
+                    // Read name.
+                    let mut buf = vec![0u8; len];
+                    data.read_exact(&mut buf)?;
+
+                    match String::from_utf8(buf) {
+                        Ok(v) => sys = Some(v),
+                        Err(_) => return Err(LibraryUnpackError::InvalidSystemName),
+                    }
+                }
+                v => return Err(LibraryUnpackError::UnknownEntry(v)),
+            }
+        }
+
+        // Write binary.
+        match sys {
+            Some(name) => {
+                bin.write_all(b"\x7FNLS")
+                    .map_err(LibraryUnpackError::WriteBinaryFailed)?;
+                bin.write_all(name.as_bytes())
+                    .map_err(LibraryUnpackError::WriteBinaryFailed)?;
+            }
+            None => {
+                std::io::copy(&mut data, &mut bin)
+                    .map_err(LibraryUnpackError::WriteBinaryFailed)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// A library's binary.
 pub enum LibraryBinary {
     Bundle(PathBuf),
     System(String),
+}
+
+/// Represents an error when [`Library`] is failed to unpack from a serialized data.
+#[derive(Debug, Error)]
+pub enum LibraryUnpackError {
+    #[error("cannot read data")]
+    ReadDataFailed(#[source] std::io::Error),
+
+    #[error("the data is not a Nitro library")]
+    NotNitroLibrary,
+
+    #[error("cannot write binary")]
+    WriteBinaryFailed(#[source] std::io::Error),
+
+    #[error("cannot write type")]
+    WriteTypeFailed(#[source] std::io::Error),
+
+    #[error("cannot read type #{0}")]
+    ReadTypeFailed(usize, #[source] TypeDeserializeError),
+
+    #[error("invalid name for system library")]
+    InvalidSystemName,
+
+    #[error("unknown entry {0}")]
+    UnknownEntry(u8),
+}
+
+impl From<std::io::Error> for LibraryUnpackError {
+    fn from(value: std::io::Error) -> Self {
+        Self::ReadDataFailed(value)
+    }
 }

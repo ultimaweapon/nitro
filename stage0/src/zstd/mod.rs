@@ -1,17 +1,21 @@
+pub use self::read::*;
+
 use crate::ffi::{
-    ZSTD_CStreamInSize, ZSTD_CStreamOutSize, ZSTD_EndDirective, ZSTD_compressStream2,
+    ZSTD_CCtx, ZSTD_CStreamInSize, ZSTD_CStreamOutSize, ZSTD_EndDirective, ZSTD_compressStream2,
     ZSTD_createCStream, ZSTD_freeCStream, ZSTD_getErrorName, ZSTD_inBuffer, ZSTD_isError,
-    ZSTD_outBuffer, ZstdContex,
+    ZSTD_outBuffer,
 };
 use std::cmp::min;
 use std::ffi::CStr;
 use std::io::{Error, ErrorKind, Write};
 use std::ptr::null;
 
+mod read;
+
 /// An implementation of [`Write`] that compress the data with zstd before writing to the underlying
 /// [`Write`].
 pub struct ZstdWriter<D> {
-    cx: *mut ZstdContex,
+    cx: *mut ZSTD_CCtx,
     buf: Vec<u8>,
     block: usize,
     dest: D,
@@ -25,10 +29,6 @@ impl<D> ZstdWriter<D> {
             block: unsafe { ZSTD_CStreamInSize() },
             dest,
         }
-    }
-
-    fn error_name(code: usize) -> &'static str {
-        unsafe { CStr::from_ptr(ZSTD_getErrorName(code)).to_str().unwrap() }
     }
 }
 
@@ -68,7 +68,7 @@ impl<D: Write> Write for ZstdWriter<D> {
             };
 
             if unsafe { ZSTD_isError(remain) } != 0 {
-                return Err(Error::new(ErrorKind::Other, Self::error_name(remain)));
+                return Err(Error::new(ErrorKind::Other, error_name(remain)));
             }
 
             // Write the destination.
@@ -109,7 +109,7 @@ impl<D: Write> Write for ZstdWriter<D> {
             };
 
             if unsafe { ZSTD_isError(remain) } != 0 {
-                break Err(Error::new(ErrorKind::Other, Self::error_name(remain)));
+                break Err(Error::new(ErrorKind::Other, error_name(remain)));
             }
 
             // Write the destination.
@@ -120,4 +120,8 @@ impl<D: Write> Write for ZstdWriter<D> {
             }
         }
     }
+}
+
+fn error_name(code: usize) -> &'static str {
+    unsafe { CStr::from_ptr(ZSTD_getErrorName(code)).to_str().unwrap() }
 }

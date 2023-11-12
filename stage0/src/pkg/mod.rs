@@ -4,7 +4,7 @@ pub use self::meta::*;
 pub use self::target::*;
 pub use self::ty::*;
 
-use crate::zstd::ZstdWriter;
+use crate::zstd::{ZstdReader, ZstdWriter};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Read;
@@ -12,6 +12,7 @@ use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use thiserror::Error;
+use uuid::Uuid;
 
 mod dep;
 mod lib;
@@ -219,12 +220,137 @@ impl Package {
         Ok(())
     }
 
-    pub fn unpack<P, T>(pkg: P, to: T) -> Result<(), PackageUnpackError>
+    pub fn unpack<P, T>(mut pkg: P, to: T) -> Result<(), PackageUnpackError>
     where
         P: Read,
         T: AsRef<Path>,
     {
-        todo!()
+        // Check magic.
+        let mut magic = [0u8; 4];
+
+        pkg.read_exact(&mut magic)?;
+
+        if magic.ne(b"\x7FNPK") {
+            return Err(PackageUnpackError::NotNitroPackage);
+        }
+
+        // Create destination directory.
+        let to = to.as_ref();
+
+        if let Err(e) = std::fs::create_dir_all(to) {
+            return Err(PackageUnpackError::CreateDirectoryFailed(to.to_owned(), e));
+        }
+
+        // Create a directory for libraries.
+        let libs = to.join("libs");
+
+        if let Err(e) = std::fs::create_dir(&libs) {
+            return Err(PackageUnpackError::CreateDirectoryFailed(libs, e));
+        }
+
+        // Iterate over the entries.
+        let mut name = None;
+        let mut version = None;
+        let mut nlib = 0;
+
+        loop {
+            // Read entry type.
+            let mut ty = 0;
+
+            pkg.read_exact(std::slice::from_mut(&mut ty))?;
+
+            // Process the entry.
+            match ty {
+                Self::ENTRY_END => break,
+                Self::ENTRY_NAME => {
+                    let mut data = [0u8; 32];
+                    pkg.read_exact(&mut data)?;
+                    name = Some(
+                        PackageName::from_bin(&data)
+                            .map_err(|e| PackageUnpackError::InvalidNameEntry(e))?,
+                    );
+                }
+                Self::ENTRY_VERSION => {
+                    let mut data = [0u8; 8];
+                    pkg.read_exact(&mut data)?;
+                    version = Some(PackageVersion::from_bin(u64::from_be_bytes(data)));
+                }
+                Self::ENTRY_DATE => {
+                    let mut data = [0u8; 8];
+                    pkg.read_exact(&mut data)?;
+                }
+                Self::ENTRY_LIB => {
+                    // Read target.
+                    let mut data = [0u8; 16];
+                    pkg.read_exact(&mut data)?;
+
+                    // Create a directory to unpack the library.
+                    let target = Uuid::from_bytes(data);
+                    let dir = libs.join(target.to_string());
+
+                    if let Err(e) = std::fs::create_dir(&dir) {
+                        return Err(PackageUnpackError::CreateDirectoryFailed(dir, e));
+                    }
+
+                    // Read dependency count.
+                    let mut data = [0u8; 2];
+                    pkg.read_exact(&mut data)?;
+                    let ndep: usize = u16::from_be_bytes(data).into();
+
+                    // Read dependencies.
+                    let mut deps = Vec::with_capacity(ndep);
+
+                    for i in 0..ndep {
+                        match Dependency::deserialize(&mut pkg) {
+                            Ok(v) => deps.push(v),
+                            Err(e) => {
+                                return Err(PackageUnpackError::InvalidLibraryDependency(
+                                    nlib, i, e,
+                                ));
+                            }
+                        };
+                    }
+
+                    // Read binary length.
+                    let mut data = [0; 4];
+                    pkg.read_exact(&mut data)?;
+                    let len: u64 = u32::from_be_bytes(data).into();
+
+                    // Read the binary.
+                    let reader = ZstdReader::new(pkg.by_ref().take(len));
+
+                    if let Err(e) = Library::unpack(reader, dir.join("bin"), dir.join("types")) {
+                        return Err(PackageUnpackError::UnpackLibraryFailed(dir, e));
+                    }
+
+                    // Write dependencies.
+                    let path = dir.join("deps.yml");
+                    let file = match File::create(&path) {
+                        Ok(v) => v,
+                        Err(e) => return Err(PackageUnpackError::WriteFileFailed(path, e)),
+                    };
+
+                    serde_yaml::to_writer(file, &deps).unwrap();
+
+                    nlib += 1;
+                }
+                v => return Err(PackageUnpackError::UnknownEntry(v)),
+            }
+        }
+
+        // Write metadata.
+        let name = name.ok_or(PackageUnpackError::NoNameEntry)?;
+        let version = version.ok_or(PackageUnpackError::NoVersionEntry)?;
+        let meta = PackageMeta::new(name, version);
+        let path = to.join("meta.yml");
+        let file = match File::create(&path) {
+            Ok(v) => v,
+            Err(e) => return Err(PackageUnpackError::WriteFileFailed(path, e)),
+        };
+
+        serde_yaml::to_writer(file, &meta).unwrap();
+
+        Ok(())
     }
 
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, PackageOpenError> {
@@ -289,4 +415,40 @@ pub enum PackageExportError {
 
 /// Represents an error when a package is failed to unpack.
 #[derive(Debug, Error)]
-pub enum PackageUnpackError {}
+pub enum PackageUnpackError {
+    #[error("cannot read the package")]
+    ReadPackageFailed(#[source] std::io::Error),
+
+    #[error("the specified file is not a Nitro package")]
+    NotNitroPackage,
+
+    #[error("cannot create {0}")]
+    CreateDirectoryFailed(PathBuf, #[source] std::io::Error),
+
+    #[error("name entry in the package is not valid")]
+    InvalidNameEntry(#[source] PackageNameError),
+
+    #[error("unknown entry {0} in the package")]
+    UnknownEntry(u8),
+
+    #[error("no name entry in the package")]
+    NoNameEntry,
+
+    #[error("no version entry in the package")]
+    NoVersionEntry,
+
+    #[error("dependency #{1} for library entry #{0} is not valid")]
+    InvalidLibraryDependency(usize, usize, #[source] DependencyError),
+
+    #[error("cannot unpack the library to {0}")]
+    UnpackLibraryFailed(PathBuf, #[source] LibraryUnpackError),
+
+    #[error("cannot write {0}")]
+    WriteFileFailed(PathBuf, #[source] std::io::Error),
+}
+
+impl From<std::io::Error> for PackageUnpackError {
+    fn from(value: std::io::Error) -> Self {
+        Self::ReadPackageFailed(value)
+    }
+}

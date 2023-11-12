@@ -63,16 +63,24 @@ extern "C" {
     ) -> *mut LlvmCall;
     pub fn llvm_builder_ret_void(ib: *mut LlvmBuilder) -> *mut LlvmReturn;
     pub fn llvm_builder_ret(ib: *mut LlvmBuilder, v: *mut LlvmValue) -> *mut LlvmReturn;
-    pub fn ZSTD_createCStream() -> *mut ZstdContex;
-    pub fn ZSTD_freeCStream(zcs: *mut ZstdContex) -> usize;
+    pub fn ZSTD_createCStream() -> *mut ZSTD_CCtx;
+    pub fn ZSTD_freeCStream(zcs: *mut ZSTD_CCtx) -> usize;
     pub fn ZSTD_compressStream2(
-        cctx: *mut ZstdContex,
+        cctx: *mut ZSTD_CCtx,
         output: *mut ZSTD_outBuffer,
         input: *mut ZSTD_inBuffer,
         endOp: ZSTD_EndDirective,
     ) -> usize;
     pub fn ZSTD_CStreamInSize() -> usize;
     pub fn ZSTD_CStreamOutSize() -> usize;
+    pub fn ZSTD_createDStream() -> *mut ZSTD_DCtx;
+    pub fn ZSTD_freeDStream(zds: *mut ZSTD_DCtx) -> usize;
+    pub fn ZSTD_decompressStream(
+        zds: *mut ZSTD_DCtx,
+        output: *mut ZSTD_outBuffer,
+        input: *mut ZSTD_inBuffer,
+    ) -> usize;
+    pub fn ZSTD_DStreamInSize() -> usize;
     pub fn ZSTD_isError(code: usize) -> u32;
     pub fn ZSTD_getErrorName(code: usize) -> *const c_char;
 }
@@ -93,7 +101,14 @@ pub struct LlvmBlock(());
 pub struct LlvmBuilder(());
 pub struct LlvmCall(());
 pub struct LlvmReturn(());
-pub struct ZstdContex(());
+
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub struct ZSTD_CCtx(());
+
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub struct ZSTD_DCtx(());
 
 #[repr(C)]
 #[allow(non_camel_case_types)]

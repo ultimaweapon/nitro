@@ -1,6 +1,8 @@
 use std::collections::HashSet;
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::io::Write;
+use std::io::{Read, Write};
+use thiserror::Error;
 
 /// A type that was exported from a package.
 pub enum TypeDeclaration {
@@ -53,6 +55,88 @@ impl TypeDeclaration {
 
         // End.
         w.write_all(&[Self::ENTRY_END])
+    }
+
+    pub(super) fn deserialize<R>(mut r: R) -> Result<Self, TypeDeserializeError>
+    where
+        R: Read,
+    {
+        // Iterate over the entries.
+        let mut name = None;
+        let mut struc = false;
+        let mut class = false;
+        let mut funcs = HashSet::new();
+
+        loop {
+            // Read entry type.
+            let mut entry = 0;
+
+            r.read_exact(std::slice::from_mut(&mut entry))?;
+
+            // Process the entry.
+            match entry {
+                Self::ENTRY_END => break,
+                Self::ENTRY_NAME => {
+                    // Read name length.
+                    let mut buf = [0u8; 2];
+                    r.read_exact(&mut buf)?;
+                    let len: usize = u16::from_be_bytes(buf).into();
+
+                    // Read name.
+                    let mut buf = vec![0u8; len];
+                    r.read_exact(&mut buf)?;
+
+                    match String::from_utf8(buf) {
+                        Ok(v) => name = Some(v),
+                        Err(_) => return Err(TypeDeserializeError::InvalidTypeName),
+                    }
+                }
+                Self::ENTRY_STRUCT => struc = true,
+                Self::ENTRY_CLASS => class = true,
+                Self::ENTRY_FUNC => {
+                    // Read function count.
+                    let mut buf = [0u8; 4];
+                    r.read_exact(&mut buf)?;
+                    let count: usize = u32::from_be_bytes(buf).try_into().unwrap();
+
+                    // Read functions.
+                    for i in 0..count {
+                        if let Some(f) = funcs.replace(Function::deserialize(&mut r, i)?) {
+                            return Err(TypeDeserializeError::DuplicatedFunction(f));
+                        }
+                    }
+                }
+                v => return Err(TypeDeserializeError::UnknownTypeEntry(v)),
+            }
+        }
+
+        // Construct type.
+        let name = name.ok_or(TypeDeserializeError::TypeNameNotFound)?;
+        let ty = match (struc, class) {
+            (true, true) | (false, false) => return Err(TypeDeserializeError::Ambiguity),
+            (true, false) => Self::Basic(BasicType {
+                is_class: false,
+                attrs: Attributes {
+                    public: None,
+                    ext: None,
+                    repr: None,
+                },
+                name,
+                funcs,
+            }),
+            (false, true) => Self::Basic(BasicType {
+                is_class: true,
+                attrs: Attributes {
+                    public: None,
+                    ext: None,
+                    repr: None,
+                },
+                name,
+                funcs,
+            }),
+        };
+
+        Ok(ty)
     }
 }
 
@@ -113,6 +197,7 @@ impl BasicType {
 }
 
 /// A function.
+#[derive(Debug)]
 pub struct Function {
     name: String,
     params: Vec<FunctionParam>,
@@ -204,6 +289,62 @@ impl Function {
         // End.
         w.write_all(&[Self::ENTRY_END])
     }
+
+    fn deserialize<R: Read>(mut r: R, i: usize) -> Result<Self, TypeDeserializeError> {
+        // Iterate over the entries.
+        let mut name = None;
+        let mut params = Vec::new();
+        let mut ret = None;
+
+        loop {
+            // Read entry type.
+            let mut ty = 0;
+
+            r.read_exact(std::slice::from_mut(&mut ty))?;
+
+            // Process the entry.
+            match ty {
+                Self::ENTRY_END => break,
+                Self::ENTRY_NAME => {
+                    // Read name length.
+                    let mut buf = [0u8; 2];
+                    r.read_exact(&mut buf)?;
+                    let len: usize = u16::from_be_bytes(buf).into();
+
+                    // Read name.
+                    let mut buf = vec![0u8; len];
+                    r.read_exact(&mut buf)?;
+
+                    match String::from_utf8(buf) {
+                        Ok(v) => name = Some(v),
+                        Err(_) => return Err(TypeDeserializeError::InvalidFunctionName(i)),
+                    }
+                }
+                Self::ENTRY_RET => match Type::deserialize(&mut r) {
+                    Some(v) => ret = Some(v),
+                    None => return Err(TypeDeserializeError::InvalidFunctionRet(i)),
+                },
+                Self::ENTRY_PARAMS => {
+                    // Read param count.
+                    let mut buf = 0u8;
+                    r.read_exact(std::slice::from_mut(&mut buf))?;
+                    let count: usize = buf.into();
+
+                    // Read params.
+                    for p in 0..count {
+                        params.push(FunctionParam::deserialize(&mut r, i, p)?);
+                    }
+                }
+                v => return Err(TypeDeserializeError::UnknownFunctionEntry(i, v)),
+            }
+        }
+
+        // Construct the function.
+        let name = name.ok_or(TypeDeserializeError::FunctionNameNotFound(i))?;
+        let ret = ret.ok_or(TypeDeserializeError::FunctionNameRetFound(i))?;
+
+        Ok(Self { name, params, ret })
+    }
 }
 
 impl PartialEq for Function {
@@ -220,7 +361,16 @@ impl Hash for Function {
     }
 }
 
+impl Display for Function {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let params: Vec<String> = self.params.iter().map(|p| p.to_string()).collect();
+
+        write!(f, "fn {}({}): {}", self.name, params.join(", "), self.ret)
+    }
+}
+
 /// A function parameter.
+#[derive(Debug)]
 pub struct FunctionParam {
     name: String,
     ty: Type,
@@ -257,9 +407,60 @@ impl FunctionParam {
         // End.
         w.write_all(&[Self::ENTRY_END])
     }
+
+    fn deserialize<R: Read>(mut r: R, f: usize, i: usize) -> Result<Self, TypeDeserializeError> {
+        // Iterate over the entries.
+        let mut name = None;
+        let mut ty = None;
+
+        loop {
+            // Read entry type.
+            let mut entry = 0;
+
+            r.read_exact(std::slice::from_mut(&mut entry))?;
+
+            // Process the entry.
+            match entry {
+                Self::ENTRY_END => break,
+                Self::ENTRY_NAME => {
+                    // Read name length.
+                    let mut buf = 0u8;
+                    r.read_exact(std::slice::from_mut(&mut buf))?;
+                    let len: usize = buf.into();
+
+                    // Read name.
+                    let mut buf = vec![0u8; len];
+                    r.read_exact(&mut buf)?;
+
+                    match String::from_utf8(buf) {
+                        Ok(v) => name = Some(v),
+                        Err(_) => return Err(TypeDeserializeError::InvalidParamName(f, i)),
+                    }
+                }
+                Self::ENTRY_TYPE => match Type::deserialize(&mut r) {
+                    Some(v) => ty = Some(v),
+                    None => return Err(TypeDeserializeError::InvalidParamType(f, i)),
+                },
+                v => return Err(TypeDeserializeError::UnknownParamEntry(f, i, v)),
+            }
+        }
+
+        // Construct param.
+        let name = name.ok_or(TypeDeserializeError::ParamNameNotFound(f, i))?;
+        let ty = ty.ok_or(TypeDeserializeError::ParamTypeNotFound(f, i))?;
+
+        Ok(Self { name, ty })
+    }
+}
+
+impl Display for FunctionParam {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.name, self.ty)
+    }
 }
 
 /// Type of something (e.g. function parameter).
+#[derive(Debug)]
 pub enum Type {
     Unit {
         ptr: usize,
@@ -363,6 +564,100 @@ impl Type {
         w.write_all(&len.to_be_bytes())?;
         w.write_all(name.as_bytes())
     }
+
+    fn deserialize<R: Read>(mut r: R) -> Option<Self> {
+        // Get category.
+        let mut cat = 0;
+        r.read_exact(std::slice::from_mut(&mut cat)).ok()?;
+
+        // Check category.
+        if cat == 3 {
+            return Some(Self::Never);
+        }
+
+        // Get prefixes.
+        let mut ptr = 0;
+        r.read_exact(std::slice::from_mut(&mut ptr)).ok()?;
+
+        if cat == 0 {
+            return Some(Self::Unit { ptr: ptr.into() });
+        }
+
+        // Get package length.
+        let mut len = 0;
+        r.read_exact(std::slice::from_mut(&mut len)).ok()?;
+
+        // Get package.
+        let pkg = match len {
+            0 => None,
+            v => {
+                // Read name.
+                let mut buf = vec![0u8; v.into()];
+                r.read_exact(&mut buf).ok()?;
+                let name = String::from_utf8(buf).ok()?;
+
+                // Read version.
+                let mut buf = [0u8; 2];
+                r.read_exact(&mut buf).ok()?;
+                let ver = u16::from_be_bytes(buf);
+
+                Some((name, ver))
+            }
+        };
+
+        // Read name length.
+        let mut buf = [0u8; 2];
+        r.read_exact(&mut buf).ok()?;
+        let len: usize = u16::from_be_bytes(buf).into();
+
+        // Read name.
+        let mut buf = vec![0u8; len];
+        r.read_exact(&mut buf).ok()?;
+        let name = String::from_utf8(buf).ok()?;
+
+        // Construct type.
+        let ty = match cat {
+            1 => Self::Struct {
+                ptr: ptr.into(),
+                pkg,
+                name,
+            },
+            2 => Self::Class {
+                ptr: ptr.into(),
+                pkg,
+                name,
+            },
+            _ => return None,
+        };
+
+        Some(ty)
+    }
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unit { ptr } => {
+                for _ in 0..*ptr {
+                    f.write_str("*")?;
+                }
+                f.write_str("()")
+            }
+            Self::Never => f.write_str("!"),
+            Self::Struct { ptr, pkg, name } | Self::Class { ptr, pkg, name } => {
+                for _ in 0..*ptr {
+                    f.write_str("*")?;
+                }
+
+                match pkg {
+                    Some((pkg, ver)) => write!(f, "{pkg}:{ver}.")?,
+                    None => f.write_str("self.")?,
+                }
+
+                f.write_str(name)
+            }
+        }
+    }
 }
 
 /// A collection of attributes.
@@ -404,4 +699,62 @@ pub enum Representation {
     I32,
     U8,
     Un,
+}
+
+/// Represents an error when [`TypeDeclaration`] is failed to deserialize from the data.
+#[derive(Debug, Error)]
+pub enum TypeDeserializeError {
+    #[error("cannot read data")]
+    ReadDataFailed(#[source] std::io::Error),
+
+    #[error("invalid type name")]
+    InvalidTypeName,
+
+    #[error("invalid name for function #{0}")]
+    InvalidFunctionName(usize),
+
+    #[error("invalid name for parameter #{1} on function #{0}")]
+    InvalidParamName(usize, usize),
+
+    #[error("invalid type for parameter #{1} on function #{0}")]
+    InvalidParamType(usize, usize),
+
+    #[error("unknown entry {2} for parameter #{1} on function #{0}")]
+    UnknownParamEntry(usize, usize, u8),
+
+    #[error("name for parameter #{1} on function #{0} is not found")]
+    ParamNameNotFound(usize, usize),
+
+    #[error("type for parameter #{1} on function #{0} is not found")]
+    ParamTypeNotFound(usize, usize),
+
+    #[error("invalid return type for function #{0}")]
+    InvalidFunctionRet(usize),
+
+    #[error("unknown entry {1} for function #{0}")]
+    UnknownFunctionEntry(usize, u8),
+
+    #[error("name for function #{0} is not found")]
+    FunctionNameNotFound(usize),
+
+    #[error("return type for function #{0} is not found")]
+    FunctionNameRetFound(usize),
+
+    #[error("multiple definition of '{0}'")]
+    DuplicatedFunction(Function),
+
+    #[error("unknown type entry {0}")]
+    UnknownTypeEntry(u8),
+
+    #[error("type name not found")]
+    TypeNameNotFound,
+
+    #[error("type is ambiguity")]
+    Ambiguity,
+}
+
+impl From<std::io::Error> for TypeDeserializeError {
+    fn from(value: std::io::Error) -> Self {
+        Self::ReadDataFailed(value)
+    }
 }

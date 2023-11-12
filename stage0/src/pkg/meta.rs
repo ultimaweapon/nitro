@@ -1,11 +1,12 @@
 use serde::de::{Error, Unexpected, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Display, Formatter};
 use std::num::ParseIntError;
 use std::str::FromStr;
 use thiserror::Error;
 
 /// Metadata for a Nitro package.
+#[derive(Deserialize, Serialize)]
 pub struct PackageMeta {
     name: PackageName,
     version: PackageVersion,
@@ -29,10 +30,18 @@ impl PackageMeta {
 ///
 /// A package name must start with a lower case ASCII and followed by zero of more 0-9 and a-z (only
 /// lower case). The maximum length is 32 characters.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct PackageName(String);
 
 impl PackageName {
+    pub fn from_bin(bin: &[u8; 32]) -> Result<Self, PackageNameError> {
+        let len = bin.iter().position(|&b| b == 0).unwrap_or(bin.len());
+
+        std::str::from_utf8(&bin[..len])
+            .map_err(|_| PackageNameError::NotDigitOrLowerCase)?
+            .parse()
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -110,7 +119,11 @@ pub struct PackageVersion {
 }
 
 impl PackageVersion {
-    pub fn new(major: u16, minor: u16, patch: u16) -> Self {
+    pub fn from_bin(bin: u64) -> Self {
+        let major: u16 = (bin >> 32) as u16;
+        let minor: u16 = (bin >> 16) as u16;
+        let patch: u16 = bin as u16;
+
         Self {
             major,
             minor,
@@ -137,6 +150,15 @@ impl<'a> Deserialize<'a> for PackageVersion {
         D: Deserializer<'a>,
     {
         deserializer.deserialize_any(PackageVersionVisitor)
+    }
+}
+
+impl Serialize for PackageVersion {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
     }
 }
 

@@ -1,17 +1,17 @@
-use crate::pkg::{PackageName, PackageVersion};
+use crate::pkg::PackageMeta;
 use serde::Deserialize;
 use std::path::PathBuf;
 
 /// Contains information that was loaded from `Nitro.yml` file.
 #[derive(Deserialize)]
 pub struct ProjectMeta {
-    package: ProjectPackage,
+    package: PackageMeta,
     executable: Option<ProjectBinary>,
     library: Option<ProjectBinary>,
 }
 
 impl ProjectMeta {
-    pub fn package(&self) -> &ProjectPackage {
+    pub fn package(&self) -> &PackageMeta {
         &self.package
     }
 
@@ -21,23 +21,6 @@ impl ProjectMeta {
 
     pub fn library(&self) -> Option<&ProjectBinary> {
         self.library.as_ref()
-    }
-}
-
-/// Contains information of a package that the project will output.
-#[derive(Deserialize)]
-pub struct ProjectPackage {
-    name: PackageName,
-    version: PackageVersion,
-}
-
-impl ProjectPackage {
-    pub fn name(&self) -> &PackageName {
-        &self.name
-    }
-
-    pub fn version(&self) -> &PackageVersion {
-        &self.version
     }
 }
 

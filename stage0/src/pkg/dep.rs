@@ -1,4 +1,7 @@
-use super::{Package, PackageName, PackageOpenError, PackageUnpackError, PackageVersion};
+use super::{
+    Package, PackageName, PackageNameError, PackageOpenError, PackageUnpackError, PackageVersion,
+};
+use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
@@ -84,7 +87,7 @@ impl DependencyResolver {
 }
 
 /// A package dependency.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct Dependency {
     name: PackageName,
     version: PackageVersion,
@@ -93,6 +96,20 @@ pub struct Dependency {
 impl Dependency {
     pub fn new(name: PackageName, version: PackageVersion) -> Self {
         Self { name, version }
+    }
+
+    pub fn deserialize<R: Read>(mut r: R) -> Result<Self, DependencyError> {
+        // Read name.
+        let mut data = [0; 32];
+        r.read_exact(&mut data)?;
+        let name = PackageName::from_bin(&data).map_err(|e| DependencyError::InvalidName(e))?;
+
+        // Read version.
+        let mut data = [0; 8];
+        r.read_exact(&mut data)?;
+        let version = PackageVersion::from_bin(u64::from_be_bytes(data));
+
+        Ok(Self { name, version })
     }
 
     pub fn serialize<W: Write>(&self, mut w: W) -> Result<(), std::io::Error> {
@@ -121,4 +138,20 @@ pub enum DependencyResolveError {
 
     #[error("cannot unpack the package")]
     UnpackPackageFailed(#[source] PackageUnpackError),
+}
+
+/// Represents an error when [`Dependency`] is failed to construct.
+#[derive(Debug, Error)]
+pub enum DependencyError {
+    #[error("cannot read data")]
+    ReadDataFailed(#[source] std::io::Error),
+
+    #[error("invalid package name")]
+    InvalidName(#[source] PackageNameError),
+}
+
+impl From<std::io::Error> for DependencyError {
+    fn from(value: std::io::Error) -> Self {
+        Self::ReadDataFailed(value)
+    }
 }
