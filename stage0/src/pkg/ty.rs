@@ -66,12 +66,21 @@ impl TypeDeclaration {
         let mut struc = false;
         let mut class = false;
         let mut funcs = HashSet::new();
+        let mut entries = 0;
 
         loop {
             // Read entry type.
-            let mut entry = 0;
+            let mut entry = 0u8;
 
-            r.read_exact(std::slice::from_mut(&mut entry))?;
+            if let Err(e) = r.read_exact(std::slice::from_mut(&mut entry)) {
+                if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                    break;
+                } else {
+                    return Err(TypeDeserializeError::ReadDataFailed(e));
+                }
+            }
+
+            entries += 1;
 
             // Process the entry.
             match entry {
@@ -108,6 +117,10 @@ impl TypeDeclaration {
                 }
                 v => return Err(TypeDeserializeError::UnknownTypeEntry(v)),
             }
+        }
+
+        if entries == 0 {
+            return Err(TypeDeserializeError::EmptyData);
         }
 
         // Construct type.
@@ -704,6 +717,9 @@ pub enum Representation {
 /// Represents an error when [`TypeDeclaration`] is failed to deserialize from the data.
 #[derive(Debug, Error)]
 pub enum TypeDeserializeError {
+    #[error("no data to read")]
+    EmptyData,
+
     #[error("cannot read data")]
     ReadDataFailed(#[source] std::io::Error),
 

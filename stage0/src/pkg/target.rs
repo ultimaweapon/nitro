@@ -6,12 +6,21 @@ use std::str::FromStr;
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 
-/// A struct to resolve primitive target.
+/// Struct to resolve [`Target`] from identifier.
 pub struct TargetResolver {}
 
 impl TargetResolver {
     pub fn new() -> Self {
         Self {}
+    }
+
+    pub fn resolve(&self, id: &Uuid) -> Result<Target, TargetResolveError> {
+        // Check if primitive target.
+        if let Some(v) = PrimitiveTarget::ALL.iter().find(|&t| t.id == *id) {
+            return Ok(Target::Primitive(v));
+        }
+
+        todo!()
     }
 
     pub fn primitive(

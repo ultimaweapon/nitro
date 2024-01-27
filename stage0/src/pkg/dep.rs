@@ -1,7 +1,8 @@
 use super::{
     Package, PackageName, PackageNameError, PackageOpenError, PackageUnpackError, PackageVersion,
+    TargetResolver,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
@@ -32,7 +33,11 @@ impl DependencyResolver {
         }
     }
 
-    pub fn resolve(&self, id: &Dependency) -> Result<Rc<Package>, DependencyResolveError> {
+    pub fn resolve(
+        &self,
+        id: &Dependency,
+        targets: &TargetResolver,
+    ) -> Result<Rc<Package>, DependencyResolveError> {
         // Check if already loaded.
         let mut loaded = self.loaded.borrow_mut();
 
@@ -46,7 +51,7 @@ impl DependencyResolver {
         let cache = self.cache.join(format!("{}-{}", id.name, id.version));
 
         match cache.symlink_metadata() {
-            Ok(_) => match Package::open(&cache) {
+            Ok(_) => match Package::open(&cache, targets) {
                 Ok(v) => {
                     let pkg = Rc::new(v);
                     assert!(loaded.insert(id.clone(), pkg.clone()).is_none());
@@ -75,7 +80,7 @@ impl DependencyResolver {
         Package::unpack(pkg, &cache).map_err(|e| DependencyResolveError::UnpackPackageFailed(e))?;
 
         // Open the package.
-        match Package::open(&cache) {
+        match Package::open(&cache, targets) {
             Ok(v) => {
                 let pkg = Rc::new(v);
                 assert!(loaded.insert(id.clone(), pkg.clone()).is_none());
@@ -87,7 +92,7 @@ impl DependencyResolver {
 }
 
 /// A package dependency.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Dependency {
     name: PackageName,
     version: PackageVersion,

@@ -111,7 +111,7 @@ impl<'a> Project<'a> {
             let version = env!("CARGO_PKG_VERSION").parse().unwrap();
             let id = Dependency::new("nitro".parse().unwrap(), version);
 
-            match self.deps.resolve(&id) {
+            match self.deps.resolve(&id, self.targets) {
                 Ok(v) => deps.push(v),
                 Err(e) => return Err(ProjectBuildError::ResolveDependencyFailed(id, e)),
             };

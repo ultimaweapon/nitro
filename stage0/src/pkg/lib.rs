@@ -32,6 +32,51 @@ impl Library {
         Self { bin, types }
     }
 
+    pub fn open<B, T>(bin: B, types: T) -> Result<Self, LibraryError>
+    where
+        B: AsRef<Path>,
+        T: AsRef<Path>,
+    {
+        // Read binary magic.
+        let bin = bin.as_ref();
+        let mut file =
+            File::open(bin).map_err(|e| LibraryError::OpenFileFailed(bin.to_owned(), e))?;
+        let mut magic = [0u8; 4];
+
+        file.read_exact(&mut magic)
+            .map_err(|e| LibraryError::ReadFileFailed(bin.to_owned(), e))?;
+
+        // Check binary type.
+        let bin = if &magic == b"\x7FNLS" {
+            let mut name = String::new();
+            file.read_to_string(&mut name)
+                .map_err(|e| LibraryError::ReadFileFailed(bin.to_owned(), e))?;
+            LibraryBinary::System(name)
+        } else {
+            LibraryBinary::Bundle(bin.to_owned())
+        };
+
+        // Load types.
+        let path = types.as_ref();
+        let mut file =
+            File::open(path).map_err(|e| LibraryError::OpenFileFailed(path.to_owned(), e))?;
+        let mut types = HashSet::new();
+
+        loop {
+            let ty = match TypeDeclaration::deserialize(&mut file) {
+                Ok(v) => v,
+                Err(TypeDeserializeError::EmptyData) => break,
+                Err(e) => return Err(LibraryError::ReadTypeFailed(path.to_owned(), e)),
+            };
+
+            if !types.insert(ty) {
+                return Err(LibraryError::DuplicatedType(path.to_owned()));
+            }
+        }
+
+        Ok(Self { bin, types })
+    }
+
     pub fn bin(&self) -> &LibraryBinary {
         &self.bin
     }
@@ -159,6 +204,22 @@ impl Library {
 pub enum LibraryBinary {
     Bundle(PathBuf),
     System(String),
+}
+
+/// Represents an error when [`Library`] is failed to construct.
+#[derive(Debug, Error)]
+pub enum LibraryError {
+    #[error("cannot open {0}")]
+    OpenFileFailed(PathBuf, #[source] std::io::Error),
+
+    #[error("cannot read {0}")]
+    ReadFileFailed(PathBuf, #[source] std::io::Error),
+
+    #[error("cannot read type declaration from {0}")]
+    ReadTypeFailed(PathBuf, #[source] TypeDeserializeError),
+
+    #[error("duplicated type declaration in {0}")]
+    DuplicatedType(PathBuf),
 }
 
 /// Represents an error when [`Library`] is failed to unpack from a serialized data.

@@ -3,12 +3,10 @@ pub use self::lib::*;
 pub use self::meta::*;
 pub use self::target::*;
 pub use self::ty::*;
-
 use crate::zstd::{ZstdReader, ZstdWriter};
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::Read;
-use std::io::{Seek, SeekFrom, Write};
+use std::fs::{read_dir, File};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use thiserror::Error;
@@ -353,8 +351,100 @@ impl Package {
         Ok(())
     }
 
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, PackageOpenError> {
-        todo!()
+    pub fn open(
+        path: impl AsRef<Path>,
+        targets: &TargetResolver,
+    ) -> Result<Self, PackageOpenError> {
+        let root = path.as_ref();
+
+        // Open metadata.
+        let path = root.join("meta.yml");
+        let meta = match File::open(&path) {
+            Ok(v) => v,
+            Err(e) => return Err(PackageOpenError::OpenFileFailed(path, e)),
+        };
+
+        // Read metadata.
+        let meta = match serde_yaml::from_reader(meta) {
+            Ok(v) => v,
+            Err(e) => return Err(PackageOpenError::ReadPackageMetaFailed(path, e)),
+        };
+
+        // Enumerate libraries.
+        let mut libs = HashMap::new();
+        let path = root.join("libs");
+        let items = match read_dir(&path) {
+            Ok(v) => v,
+            Err(e) => return Err(PackageOpenError::OpenDirectoryFailed(path, e)),
+        };
+
+        for item in items {
+            let item = match item {
+                Ok(v) => v,
+                Err(e) => return Err(PackageOpenError::OpenDirectoryFailed(path, e)),
+            };
+
+            // Check if directory.
+            let path = item.path();
+            let meta = match std::fs::metadata(&path) {
+                Ok(v) => v,
+                Err(e) => return Err(PackageOpenError::GetFileMetaFailed(path, e)),
+            };
+
+            if !meta.is_dir() {
+                continue;
+            }
+
+            // Check if directory name is UTF-8.
+            let name = match path.file_name().unwrap().to_str() {
+                Some(v) => v,
+                None => return Err(PackageOpenError::InvalidLibraryDirectory(path)),
+            };
+
+            // Get target ID.
+            let target: Uuid = match name.parse() {
+                Ok(v) => v,
+                Err(_) => return Err(PackageOpenError::InvalidLibraryDirectory(path)),
+            };
+
+            // Resolve target.
+            let target = match targets.resolve(&target) {
+                Ok(v) => v,
+                Err(e) => return Err(PackageOpenError::ResolveTargetFailed(target, e)),
+            };
+
+            // Load library.
+            let bin = match Library::open(path.join("bin"), path.join("types")) {
+                Ok(v) => v,
+                Err(e) => return Err(PackageOpenError::OpenLibraryFailed(e)),
+            };
+
+            // Open dependencies.
+            let path = path.join("deps.yml");
+            let deps = match File::open(&path) {
+                Ok(v) => v,
+                Err(e) => return Err(PackageOpenError::OpenFileFailed(path, e)),
+            };
+
+            // Read dependencies.
+            let list: Vec<Dependency> = match serde_yaml::from_reader(deps) {
+                Ok(v) => v,
+                Err(e) => return Err(PackageOpenError::ReadDependenciesFailed(path, e)),
+            };
+
+            // Build dependency list.
+            let mut deps = HashSet::with_capacity(list.len());
+
+            for dep in list {
+                if let Some(dep) = deps.replace(dep) {
+                    return Err(PackageOpenError::DuplicatedDependency(path, dep));
+                }
+            }
+
+            assert!(libs.insert(target, Binary::new(bin, deps)).is_none());
+        }
+
+        Ok(Self::new(meta, HashMap::new(), libs))
     }
 }
 
@@ -376,7 +466,34 @@ impl<T> Binary<T> {
 
 /// Represents an error when a package is failed to open.
 #[derive(Debug, Error)]
-pub enum PackageOpenError {}
+pub enum PackageOpenError {
+    #[error("cannot open {0}")]
+    OpenFileFailed(PathBuf, #[source] std::io::Error),
+
+    #[error("cannot open {0}")]
+    OpenDirectoryFailed(PathBuf, #[source] std::io::Error),
+
+    #[error("cannot get metadata of {0}")]
+    GetFileMetaFailed(PathBuf, #[source] std::io::Error),
+
+    #[error("cannot read package metadata from {0}")]
+    ReadPackageMetaFailed(PathBuf, #[source] serde_yaml::Error),
+
+    #[error("name of {0} is not a valid name for library directory")]
+    InvalidLibraryDirectory(PathBuf),
+
+    #[error("cannot resolve target {0}")]
+    ResolveTargetFailed(Uuid, #[source] TargetResolveError),
+
+    #[error("cannot open library")]
+    OpenLibraryFailed(#[source] LibraryError),
+
+    #[error("cannot read dependencies from {0}")]
+    ReadDependenciesFailed(PathBuf, #[source] serde_yaml::Error),
+
+    #[error("multiple definition of {1} in {0}")]
+    DuplicatedDependency(PathBuf, Dependency),
+}
 
 /// Represents an error when a package is failed to pack.
 #[derive(Debug, Error)]
