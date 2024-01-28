@@ -14,7 +14,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         include:
         - os: ubuntu-latest
-          parallel: 2
+          parallel: 4
           setup: |
             curl -Lo llvm.tar.xz "$LLVM_URL"
             hash=$(md5sum llvm.tar.xz | head -c 32)
@@ -40,7 +40,7 @@ jobs:
           dist: ./build-dist.sh
           artifact: nitro-mac
         - os: windows-latest
-          parallel: 2
+          parallel: 4
           setup: |
             Invoke-WebRequest -Uri "$env:LLVM_URL" -OutFile llvm.tar.xz
             $hash = (Get-FileHash llvm.tar.xz).Hash
@@ -65,7 +65,7 @@ jobs:
       run: ${{ matrix.setup }}
       id: setup
     - name: Restore LLVM cache
-      uses: actions/cache/restore@v3
+      uses: actions/cache/restore@v4
       with:
         path: deps/llvm/build
         key: ${{ steps.setup.outputs.llvm-cache }}
@@ -76,7 +76,7 @@ jobs:
     - name: Build distribution
       run: ${{ matrix.dist }}
     - name: Cache LLVM
-      uses: actions/cache/save@v3
+      uses: actions/cache/save@v4
       with:
         path: deps/llvm/build
         key: ${{ steps.setup.outputs.llvm-cache }}-${{ github.run_id }}
