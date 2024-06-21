@@ -51,7 +51,7 @@ extern "C" bool llvm_target_emit_object(
 
     llvm::legacy::PassManager pass;
 
-    if (mc->addPassesToEmitFile(pass, os, nullptr, CodeGenFileType::CGFT_ObjectFile)) {
+    if (mc->addPassesToEmitFile(pass, os, nullptr, CodeGenFileType::ObjectFile)) {
         nitro_string_set(err, "The machine can't emit an object file");
         return false;
     }
